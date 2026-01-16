@@ -6,10 +6,6 @@ aws_region = "eu-west-2"
 # Namespace prefix for resources
 namespace = "ndx"
 
-# ARN of Secrets Manager secret containing GOV.UK Notify API key
-# Create a secret with: aws secretsmanager create-secret --name ndx/govuk-notify --secret-string '{"apiKey":"your-api-key"}'
-govuk_notify_secret_arn = "arn:aws:secretsmanager:eu-west-2:ACCOUNT_ID:secret:ndx/govuk-notify-XXXXXX"
-
 # GOV.UK Notify template ID for cost report emails
 # Create this template in your GOV.UK Notify account
 # Required personalisation fields: account_id, lease_id, total_cost, start_date, end_date, cost_breakdown

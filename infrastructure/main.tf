@@ -27,6 +27,17 @@ provider "aws" {
 }
 
 # =============================================================================
+# SECRETS MANAGER - GOV.UK NOTIFY API KEY
+# =============================================================================
+# Create the secret - the actual API key value must be set manually via:
+# aws secretsmanager put-secret-value --secret-id <secret-arn> --secret-string '{"apiKey":"your-api-key"}'
+
+resource "aws_secretsmanager_secret" "govuk_notify" {
+  name        = "${var.namespace}/govuk-notify"
+  description = "GOV.UK Notify API key for cost report emails"
+}
+
+# =============================================================================
 # IAM ROLE FOR LAMBDA
 # =============================================================================
 
@@ -100,9 +111,7 @@ data "aws_iam_policy_document" "cost_reporter_lambda" {
     actions = [
       "secretsmanager:GetSecretValue"
     ]
-    resources = [
-      "arn:aws:secretsmanager:${var.aws_region}:*:secret:${var.namespace}/govuk-notify-*"
-    ]
+    resources = [aws_secretsmanager_secret.govuk_notify.arn]
   }
 }
 
@@ -173,7 +182,7 @@ resource "aws_lambda_function" "cost_reporter" {
 
   environment {
     variables = {
-      GOVUK_NOTIFY_SECRET_ARN  = var.govuk_notify_secret_arn
+      GOVUK_NOTIFY_SECRET_ARN  = aws_secretsmanager_secret.govuk_notify.arn
       GOVUK_NOTIFY_TEMPLATE_ID = var.govuk_notify_template_id
       SCHEDULER_ROLE_ARN       = aws_iam_role.scheduler_execution.arn
       SCHEDULER_GROUP_NAME     = aws_scheduler_schedule_group.cost_reporter.name

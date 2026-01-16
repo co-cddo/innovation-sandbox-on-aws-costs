@@ -191,7 +191,6 @@ jobs:
         run: terraform plan -no-color -input=false -out=tfplan 2>&1 | tee plan_output.txt
         continue-on-error: true
         env:
-          TF_VAR_govuk_notify_secret_arn: ${{ secrets.GOVUK_NOTIFY_SECRET_ARN }}
           TF_VAR_govuk_notify_template_id: ${{ secrets.GOVUK_NOTIFY_TEMPLATE_ID }}
 
       - name: Comment PR with Plan
@@ -301,5 +300,4 @@ jobs:
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform apply -auto-approve -input=false tfplan
         env:
-          TF_VAR_govuk_notify_secret_arn: ${{ secrets.GOVUK_NOTIFY_SECRET_ARN }}
           TF_VAR_govuk_notify_template_id: ${{ secrets.GOVUK_NOTIFY_TEMPLATE_ID }}

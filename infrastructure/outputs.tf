@@ -22,3 +22,8 @@ output "lambda_role_arn" {
   description = "ARN of the Lambda execution role"
   value       = aws_iam_role.cost_reporter_lambda.arn
 }
+
+output "govuk_notify_secret_arn" {
+  description = "ARN of the Secrets Manager secret for GOV.UK Notify API key. Set value with: aws secretsmanager put-secret-value --secret-id <this-arn> --secret-string '{\"apiKey\":\"your-key\"}'"
+  value       = aws_secretsmanager_secret.govuk_notify.arn
+}

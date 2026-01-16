@@ -10,11 +10,6 @@ variable "namespace" {
   default     = "ndx"
 }
 
-variable "govuk_notify_secret_arn" {
-  description = "ARN of Secrets Manager secret containing GOV.UK Notify API key"
-  type        = string
-}
-
 variable "govuk_notify_template_id" {
   description = "GOV.UK Notify template ID for cost report emails"
   type        = string
