@@ -173,11 +173,11 @@ resource "aws_lambda_function" "cost_reporter" {
 
   environment {
     variables = {
-      GOVUK_NOTIFY_SECRET_ARN = var.govuk_notify_secret_arn
+      GOVUK_NOTIFY_SECRET_ARN  = var.govuk_notify_secret_arn
       GOVUK_NOTIFY_TEMPLATE_ID = var.govuk_notify_template_id
-      SCHEDULER_ROLE_ARN      = aws_iam_role.scheduler_execution.arn
-      SCHEDULER_GROUP_NAME    = aws_scheduler_schedule_group.cost_reporter.name
-      COST_REPORT_DELAY_HOURS = var.cost_report_delay_hours
+      SCHEDULER_ROLE_ARN       = aws_iam_role.scheduler_execution.arn
+      SCHEDULER_GROUP_NAME     = aws_scheduler_schedule_group.cost_reporter.name
+      COST_REPORT_DELAY_HOURS  = var.cost_report_delay_hours
     }
   }
 
@@ -220,12 +220,12 @@ resource "aws_cloudwatch_event_target" "lease_ended" {
   # Transform the event to include action type
   input_transformer {
     input_paths = {
-      accountId   = "$.detail.accountId"
-      leaseId     = "$.detail.leaseId"
-      userEmail   = "$.detail.userEmail"
-      leaseStart  = "$.detail.leaseStartTime"
-      leaseEnd    = "$.detail.leaseEndTime"
-      detailType  = "$.detail-type"
+      accountId  = "$.detail.accountId"
+      leaseId    = "$.detail.leaseId"
+      userEmail  = "$.detail.userEmail"
+      leaseStart = "$.detail.leaseStartTime"
+      leaseEnd   = "$.detail.leaseEndTime"
+      detailType = "$.detail-type"
     }
     input_template = <<EOF
 {
