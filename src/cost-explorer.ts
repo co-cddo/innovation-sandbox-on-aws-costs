@@ -10,7 +10,22 @@ import type { CliOptions, CostReport, CostByService } from "./types.js";
 const AWS_PROFILE = "NDX/orgManagement";
 const COST_EXPLORER_REGION = "us-east-1";
 
+/**
+ * Creates a Cost Explorer client
+ * Uses IAM role credentials when running in Lambda (no profile)
+ * Uses SSO profile when running locally via CLI
+ */
 function createCostExplorerClient(): CostExplorerClient {
+  // In Lambda, AWS_LAMBDA_FUNCTION_NAME is set - use default credential chain
+  // Locally, use the SSO profile
+  const isLambda = !!process.env.AWS_LAMBDA_FUNCTION_NAME;
+
+  if (isLambda) {
+    return new CostExplorerClient({
+      region: COST_EXPLORER_REGION,
+    });
+  }
+
   return new CostExplorerClient({
     region: COST_EXPLORER_REGION,
     credentials: fromIni({ profile: AWS_PROFILE }),

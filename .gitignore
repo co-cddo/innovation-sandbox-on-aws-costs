@@ -1,6 +1,10 @@
 node_modules/
 dist/
+lambda.zip
 .tsbuildinfo
 .env
 .env.local
 .DS_Store
+.terraform/
+*.tfstate*
+.terraform.lock.hcl
