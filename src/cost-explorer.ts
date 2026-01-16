@@ -57,9 +57,11 @@ export async function getCostData(options: CliOptions): Promise<CostReport> {
           },
         },
         {
-          Dimensions: {
-            Key: "RECORD_TYPE",
-            Values: ["Credit", "BundledDiscount"],
+          Not: {
+            Dimensions: {
+              Key: "RECORD_TYPE",
+              Values: ["Credit", "Refund"],
+            },
           },
         },
       ],
