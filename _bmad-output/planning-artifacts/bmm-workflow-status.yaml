@@ -1,0 +1,46 @@
+# BMM Workflow Status - Quick Flow Track
+# ========================================
+# This tracks progress through the Quick Flow methodology
+# Quick Flow: Minimal planning, fast iteration (tech-spec → implementation)
+
+# STATUS DEFINITIONS:
+# ==================
+# Initial Status (before completion):
+#   - required: Must be completed to progress
+#   - optional: Can be completed but not required
+#
+# Completion Status:
+#   - {file-path}: File created (e.g., "implementation-artifacts/tech-spec.md")
+#   - skipped: Optional workflow that was skipped
+
+generated: "2026-02-02"
+project: "innovation-sandbox-on-aws-costs"
+project_type: "Quick Flow"
+selected_track: "quick-flow"
+field_type: "brownfield"
+workflow_path: "quick-flow-brownfield"
+
+# Workflow Status
+# ===============
+# Quick Flow has a simple 2-phase approach:
+#   Phase 1: Specification (quick-spec)
+#   Phase 2: Implementation (quick-dev)
+
+workflow_status:
+  # Phase 1: Specification
+  quick-spec: "_bmad-output/implementation-artifacts/tech-spec-lease-cost-collection.md"
+
+  # Phase 2: Implementation
+  quick-dev: required
+
+# Workflow Details (for reference)
+# ================================
+# quick-spec:
+#   agent: quick-flow-solo-dev
+#   command: /bmad:bmm:workflows:quick-spec
+#   purpose: Create implementation-ready tech specification
+#
+# quick-dev:
+#   agent: quick-flow-solo-dev (or dev)
+#   command: /bmad:bmm:workflows:quick-dev
+#   purpose: Implement the tech spec task by task
