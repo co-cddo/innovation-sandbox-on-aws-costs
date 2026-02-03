@@ -113,7 +113,7 @@ describe("assumeCostExplorerRole", () => {
   });
 
   describe("credential duration", () => {
-    it("should use default duration of 7200 seconds (2 hours)", async () => {
+    it("should use default duration of 3600 seconds (1 hour)", async () => {
       mockSend.mockResolvedValue({
         Credentials: {
           AccessKeyId: "AKID",
@@ -128,7 +128,7 @@ describe("assumeCostExplorerRole", () => {
       expect(mockSend).toHaveBeenCalledWith(
         expect.objectContaining({
           input: expect.objectContaining({
-            DurationSeconds: 7200,
+            DurationSeconds: 3600,
           }),
         })
       );
