@@ -62,22 +62,46 @@ import {
 // Mock AWS SDK clients
 vi.mock("@aws-sdk/client-cost-explorer", async () => {
   const actual = await vi.importActual("@aws-sdk/client-cost-explorer");
-  return { ...actual, CostExplorerClient: vi.fn() };
+  class MockCostExplorerClient {
+    send = vi.fn();
+  }
+  return {
+    ...actual,
+    CostExplorerClient: vi.fn(() => new MockCostExplorerClient()),
+  };
 });
 
 vi.mock("@aws-sdk/client-scheduler", async () => {
   const actual = await vi.importActual("@aws-sdk/client-scheduler");
-  return { ...actual, SchedulerClient: vi.fn() };
+  class MockSchedulerClient {
+    send = vi.fn();
+  }
+  return {
+    ...actual,
+    SchedulerClient: vi.fn(() => new MockSchedulerClient()),
+  };
 });
 
 vi.mock("@aws-sdk/client-cloudwatch", async () => {
   const actual = await vi.importActual("@aws-sdk/client-cloudwatch");
-  return { ...actual, CloudWatchClient: vi.fn() };
+  class MockCloudWatchClient {
+    send = vi.fn();
+  }
+  return {
+    ...actual,
+    CloudWatchClient: vi.fn(() => new MockCloudWatchClient()),
+  };
 });
 
 vi.mock("@aws-sdk/client-eventbridge", async () => {
   const actual = await vi.importActual("@aws-sdk/client-eventbridge");
-  return { ...actual, EventBridgeClient: vi.fn() };
+  class MockEventBridgeClient {
+    send = vi.fn();
+  }
+  return {
+    ...actual,
+    EventBridgeClient: vi.fn(() => new MockEventBridgeClient()),
+  };
 });
 
 // Mock S3 uploader module to avoid presigned URL issues
@@ -94,12 +118,24 @@ vi.mock("../lib/s3-uploader.js", () => ({
 
 vi.mock("@aws-sdk/client-lambda", async () => {
   const actual = await vi.importActual("@aws-sdk/client-lambda");
-  return { ...actual, LambdaClient: vi.fn() };
+  class MockLambdaClient {
+    send = vi.fn();
+  }
+  return {
+    ...actual,
+    LambdaClient: vi.fn(() => new MockLambdaClient()),
+  };
 });
 
 vi.mock("@aws-sdk/client-sts", async () => {
   const actual = await vi.importActual("@aws-sdk/client-sts");
-  return { ...actual, STSClient: vi.fn() };
+  class MockSTSClient {
+    send = vi.fn();
+  }
+  return {
+    ...actual,
+    STSClient: vi.fn(() => new MockSTSClient()),
+  };
 });
 
 vi.mock("../lib/logger.js", () => ({
@@ -129,24 +165,24 @@ describe("cost-collector-handler - Performance Tests", () => {
     mockLambdaSend = vi.fn();
     mockSTSSend = vi.fn();
 
-    (CostExplorerClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-      () => ({ send: mockCostExplorerSend })
-    );
-    (SchedulerClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-      () => ({ send: mockSchedulerSend })
-    );
-    (CloudWatchClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-      () => ({ send: mockCloudWatchSend })
-    );
-    (EventBridgeClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-      () => ({ send: mockEventBridgeSend })
-    );
-    (LambdaClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-      () => ({ send: mockLambdaSend })
-    );
-    (STSClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-      () => ({ send: mockSTSSend })
-    );
+    (CostExplorerClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(function() {
+      return { send: mockCostExplorerSend };
+    });
+    (SchedulerClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(function() {
+      return { send: mockSchedulerSend };
+    });
+    (CloudWatchClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(function() {
+      return { send: mockCloudWatchSend };
+    });
+    (EventBridgeClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(function() {
+      return { send: mockEventBridgeSend };
+    });
+    (LambdaClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(function() {
+      return { send: mockLambdaSend };
+    });
+    (STSClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(function() {
+      return { send: mockSTSSend };
+    });
 
     // Set environment variables
     vi.stubEnv("COST_EXPLORER_ROLE_ARN", "arn:aws:iam::123456789012:role/CostExplorer");
@@ -211,6 +247,7 @@ describe("cost-collector-handler - Performance Tests", () => {
    */
   it(
     "should process typical account (50 services) within 60 seconds",
+    { timeout: 120000 }, // 2-minute test timeout
     async () => {
       // Generate 50 services with varying costs
       const services = Array.from({ length: 50 }, (_, i) => ({
@@ -242,8 +279,7 @@ describe("cost-collector-handler - Performance Tests", () => {
 
       // Log performance metrics
       console.log(`✓ Typical account (50 services): ${elapsedSeconds.toFixed(2)}s`);
-    },
-    { timeout: 120000 } // 2-minute test timeout
+    }
   );
 
   /**
@@ -259,6 +295,7 @@ describe("cost-collector-handler - Performance Tests", () => {
    */
   it(
     "should process large account (200+ services) within 300 seconds",
+    { timeout: 600000 }, // 10-minute test timeout
     async () => {
       // Generate 200 services with varying costs
       const services = Array.from({ length: 200 }, (_, i) => ({
@@ -298,8 +335,7 @@ describe("cost-collector-handler - Performance Tests", () => {
       // Log performance metrics
       console.log(`✓ Large account (200 services): ${elapsedSeconds.toFixed(2)}s`);
       console.log(`  Memory: ${heapUsedMB.toFixed(2)} MB`);
-    },
-    { timeout: 600000 } // 10-minute test timeout
+    }
   );
 
   /**
@@ -315,6 +351,7 @@ describe("cost-collector-handler - Performance Tests", () => {
    */
   it(
     "should handle Cost Explorer pagination (50 pages) within 120 seconds",
+    { timeout: 180000 }, // 3-minute test timeout
     async () => {
       const TOTAL_PAGES = 50;
       let callCount = 0;
@@ -362,8 +399,7 @@ describe("cost-collector-handler - Performance Tests", () => {
       // Log performance metrics
       console.log(`✓ Pagination (50 pages): ${elapsedSeconds.toFixed(2)}s`);
       console.log(`  Avg per page: ${(elapsedSeconds / TOTAL_PAGES).toFixed(3)}s`);
-    },
-    { timeout: 180000 } // 3-minute test timeout
+    }
   );
 
   /**

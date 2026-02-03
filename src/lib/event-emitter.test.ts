@@ -8,9 +8,12 @@ import type { LeaseCostsGeneratedDetail } from "./schemas.js";
 // Mock EventBridge client
 vi.mock("@aws-sdk/client-eventbridge", async () => {
   const actual = await vi.importActual("@aws-sdk/client-eventbridge");
+  class MockEventBridgeClient {
+    send = vi.fn();
+  }
   return {
     ...actual,
-    EventBridgeClient: vi.fn(),
+    EventBridgeClient: vi.fn(() => new MockEventBridgeClient()),
   };
 });
 
@@ -34,9 +37,11 @@ describe("emitLeaseCostsGenerated", () => {
     mockSend = vi.fn();
     (
       EventBridgeClient as unknown as ReturnType<typeof vi.fn>
-    ).mockImplementation(() => ({
-      send: mockSend,
-    }));
+    ).mockImplementation(function() {
+      return {
+        send: mockSend,
+      };
+    });
   });
 
   it("should emit event with correct source and detail-type", async () => {

@@ -18,19 +18,25 @@ vi.mock("aws-xray-sdk-core", () => ({
 }));
 
 // Mock CloudWatch client
-vi.mock("@aws-sdk/client-cloudwatch", () => ({
-  CloudWatchClient: vi.fn().mockImplementation(() => ({
-    send: vi.fn().mockResolvedValue({}),
-  })),
-  PutMetricDataCommand: vi.fn(),
-}));
+vi.mock("@aws-sdk/client-cloudwatch", () => {
+  class MockCloudWatchClient {
+    send = vi.fn().mockResolvedValue({});
+  }
+  return {
+    CloudWatchClient: MockCloudWatchClient,
+    PutMetricDataCommand: vi.fn(),
+  };
+});
 
 // Mock only external dependencies and AWS services
 vi.mock("@aws-sdk/client-scheduler", async () => {
   const actual = await vi.importActual("@aws-sdk/client-scheduler");
+  class MockSchedulerClient {
+    send = vi.fn();
+  }
   return {
     ...actual,
-    SchedulerClient: vi.fn(),
+    SchedulerClient: vi.fn(() => new MockSchedulerClient()),
   };
 });
 
@@ -91,11 +97,11 @@ describe("cost-collector-handler", () => {
     vi.clearAllMocks();
 
     mockSchedulerSend = vi.fn().mockResolvedValue({});
-    (SchedulerClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-      () => ({
+    (SchedulerClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(function() {
+      return {
         send: mockSchedulerSend,
-      })
-    );
+      };
+    });
 
     // Set environment variables
     vi.stubEnv(
@@ -640,7 +646,7 @@ describe("cost-collector-handler", () => {
         warn: vi.fn(),
         error: vi.fn(),
       };
-      createLoggerMock.mockReturnValue(mockLogger);
+      createLoggerMock.mockReturnValue(mockLogger as any);
     });
 
     it("should create logger with context fields", async () => {
