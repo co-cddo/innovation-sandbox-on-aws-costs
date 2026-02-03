@@ -4,9 +4,12 @@ import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
 // Mock Lambda client
 vi.mock("@aws-sdk/client-lambda", async () => {
   const actual = await vi.importActual("@aws-sdk/client-lambda");
+  class MockLambdaClient {
+    send = vi.fn();
+  }
   return {
     ...actual,
-    LambdaClient: vi.fn(),
+    LambdaClient: vi.fn(() => new MockLambdaClient()),
   };
 });
 
@@ -16,11 +19,11 @@ describe("isb-api-client", () => {
   beforeEach(() => {
     vi.resetModules();
     mockSend = vi.fn();
-    (LambdaClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-      () => ({
+    (LambdaClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(function() {
+      return {
         send: mockSend,
-      })
-    );
+      };
+    });
   });
 
   describe("encodeLeaseId", () => {

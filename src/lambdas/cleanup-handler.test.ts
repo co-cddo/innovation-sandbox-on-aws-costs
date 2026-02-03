@@ -11,9 +11,12 @@ import {
 // Mock Scheduler client
 vi.mock("@aws-sdk/client-scheduler", async () => {
   const actual = await vi.importActual("@aws-sdk/client-scheduler");
+  class MockSchedulerClient {
+    send = vi.fn();
+  }
   return {
     ...actual,
-    SchedulerClient: vi.fn(),
+    SchedulerClient: vi.fn(() => new MockSchedulerClient()),
   };
 });
 
@@ -34,11 +37,11 @@ describe("cleanup-handler", () => {
     vi.clearAllMocks();
 
     mockSend = vi.fn();
-    (SchedulerClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-      () => ({
+    (SchedulerClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(function() {
+      return {
         send: mockSend,
-      })
-    );
+      };
+    });
 
     // Set environment variables
     vi.stubEnv("SCHEDULER_GROUP", "isb-lease-costs");

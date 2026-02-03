@@ -9,9 +9,12 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 // Mock S3 client and presigner
 vi.mock("@aws-sdk/client-s3", async () => {
   const actual = await vi.importActual("@aws-sdk/client-s3");
+  class MockS3Client {
+    send = vi.fn();
+  }
   return {
     ...actual,
-    S3Client: vi.fn(),
+    S3Client: vi.fn(() => new MockS3Client()),
   };
 });
 
@@ -25,11 +28,11 @@ describe("s3-uploader", () => {
   beforeEach(() => {
     vi.resetModules();
     mockSend = vi.fn();
-    (S3Client as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-      () => ({
+    (S3Client as unknown as ReturnType<typeof vi.fn>).mockImplementation(function() {
+      return {
         send: mockSend,
-      })
-    );
+      };
+    });
     vi.mocked(getSignedUrl).mockReset();
   });
 

@@ -9,9 +9,12 @@ import type { EventBridgeEvent } from "aws-lambda";
 // Mock Scheduler client
 vi.mock("@aws-sdk/client-scheduler", async () => {
   const actual = await vi.importActual("@aws-sdk/client-scheduler");
+  class MockSchedulerClient {
+    send = vi.fn();
+  }
   return {
     ...actual,
-    SchedulerClient: vi.fn(),
+    SchedulerClient: vi.fn(() => new MockSchedulerClient()),
   };
 });
 
@@ -49,11 +52,11 @@ describe("scheduler-handler", () => {
   beforeEach(async () => {
     vi.resetModules();
     mockSend = vi.fn();
-    (SchedulerClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-      () => ({
+    (SchedulerClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(function() {
+      return {
         send: mockSend,
-      })
-    );
+      };
+    });
 
     // Set environment variables
     vi.stubEnv("DELAY_HOURS", "24");

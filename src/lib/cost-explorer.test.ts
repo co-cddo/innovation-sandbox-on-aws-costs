@@ -22,9 +22,12 @@ import { CostExplorerClient, GetCostAndUsageCommand } from "@aws-sdk/client-cost
 // Mock Cost Explorer client
 vi.mock("@aws-sdk/client-cost-explorer", async () => {
   const actual = await vi.importActual("@aws-sdk/client-cost-explorer");
+  class MockCostExplorerClient {
+    send = vi.fn();
+  }
   return {
     ...actual,
-    CostExplorerClient: vi.fn(),
+    CostExplorerClient: vi.fn(() => new MockCostExplorerClient()),
   };
 });
 
@@ -38,11 +41,11 @@ describe("cost-explorer", () => {
   beforeEach(() => {
     vi.resetModules();
     mockSend = vi.fn();
-    (CostExplorerClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-      () => ({
+    (CostExplorerClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(function() {
+      return {
         send: mockSend,
-      })
-    );
+      };
+    });
   });
 
   describe("createCostExplorerClient", () => {

@@ -4,9 +4,12 @@ import { STSClient, AssumeRoleCommand } from "@aws-sdk/client-sts";
 // Mock the STS client
 vi.mock("@aws-sdk/client-sts", async () => {
   const actual = await vi.importActual("@aws-sdk/client-sts");
+  class MockSTSClient {
+    send = vi.fn();
+  }
   return {
     ...actual,
-    STSClient: vi.fn(),
+    STSClient: vi.fn(() => new MockSTSClient()),
   };
 });
 
@@ -16,11 +19,11 @@ describe("assumeCostExplorerRole", () => {
   beforeEach(() => {
     vi.resetModules();
     mockSend = vi.fn();
-    (STSClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-      () => ({
+    (STSClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(function() {
+      return {
         send: mockSend,
-      })
-    );
+      };
+    });
   });
 
   it("should return credentials on successful assume role", async () => {
