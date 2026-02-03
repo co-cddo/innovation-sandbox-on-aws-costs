@@ -19,9 +19,11 @@ vi.mock("aws-xray-sdk-core", () => ({
 
 // Mock CloudWatch client
 vi.mock("@aws-sdk/client-cloudwatch", () => ({
-  CloudWatchClient: vi.fn().mockImplementation(() => ({
-    send: vi.fn().mockResolvedValue({}),
-  })),
+  CloudWatchClient: vi.fn(function() {
+    return {
+      send: vi.fn().mockResolvedValue({}),
+    };
+  }),
   PutMetricDataCommand: vi.fn(),
 }));
 
@@ -30,7 +32,7 @@ vi.mock("@aws-sdk/client-scheduler", async () => {
   const actual = await vi.importActual("@aws-sdk/client-scheduler");
   return {
     ...actual,
-    SchedulerClient: vi.fn(),
+    SchedulerClient: vi.fn(function() {}),
   };
 });
 
@@ -92,9 +94,11 @@ describe("cost-collector-handler", () => {
 
     mockSchedulerSend = vi.fn().mockResolvedValue({});
     (SchedulerClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-      () => ({
-        send: mockSchedulerSend,
-      })
+      function() {
+        return {
+          send: mockSchedulerSend,
+        };
+      }
     );
 
     // Set environment variables
@@ -636,11 +640,11 @@ describe("cost-collector-handler", () => {
       const logger = await import("../lib/logger.js");
       const createLoggerMock = vi.mocked(logger.createLogger);
       mockLogger = {
-        info: vi.fn(),
-        warn: vi.fn(),
-        error: vi.fn(),
+        info: vi.fn() as any,
+        warn: vi.fn() as any,
+        error: vi.fn() as any,
       };
-      createLoggerMock.mockReturnValue(mockLogger);
+      createLoggerMock.mockReturnValue(mockLogger as any);
     });
 
     it("should create logger with context fields", async () => {

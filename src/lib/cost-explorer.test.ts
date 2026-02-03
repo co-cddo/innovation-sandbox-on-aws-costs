@@ -24,7 +24,7 @@ vi.mock("@aws-sdk/client-cost-explorer", async () => {
   const actual = await vi.importActual("@aws-sdk/client-cost-explorer");
   return {
     ...actual,
-    CostExplorerClient: vi.fn(),
+    CostExplorerClient: vi.fn(function() { return {}; }),
   };
 });
 
@@ -37,11 +37,13 @@ describe("cost-explorer", () => {
 
   beforeEach(() => {
     vi.resetModules();
-    mockSend = vi.fn();
+    mockSend = vi.fn(function() {});
     (CostExplorerClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-      () => ({
-        send: mockSend,
-      })
+      function() {
+        return {
+          send: mockSend,
+        };
+      }
     );
   });
 
@@ -527,7 +529,7 @@ describe("cost-explorer", () => {
     });
 
     describe("rate limiting and safety features", () => {
-      it("should stop pagination at MAX_PAGES limit (50 pages)", { timeout: 15000 }, async () => {
+      it("should stop pagination at MAX_PAGES limit (50 pages)", async () => {
         // Mock 60 pages to exceed the limit
         const totalPages = 60;
         const maxPages = 50;
@@ -768,7 +770,7 @@ describe("cost-explorer", () => {
         expect(mockSend).toHaveBeenCalledTimes(2);
       });
 
-      it("should handle MAX_PAGES boundary exactly", { timeout: 15000 }, async () => {
+      it("should handle MAX_PAGES boundary exactly", async () => {
         // Mock exactly 50 pages (the limit) that naturally terminates
         const maxPages = 50;
 

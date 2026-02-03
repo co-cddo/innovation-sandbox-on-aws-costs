@@ -63,7 +63,6 @@ describe.skipIf(!INTEGRATION_TEST_ENABLED)(
      */
     it(
       "should handle pagination with real AWS Cost Explorer API",
-      { timeout: 60000 }, // 60 second timeout for real API calls
       async () => {
         // Query last 3 months (likely to have multiple services)
         const endDate = new Date();
@@ -107,7 +106,6 @@ describe.skipIf(!INTEGRATION_TEST_ENABLED)(
      */
     it(
       "should handle rate limiting gracefully with real AWS API",
-      { timeout: 120000 }, // 120 second timeout
       async () => {
         // Query last month (should have manageable data)
         const endDate = new Date();
@@ -146,7 +144,6 @@ describe.skipIf(!INTEGRATION_TEST_ENABLED)(
      */
     it(
       "should handle date range with no cost data",
-      { timeout: 30000 },
       async () => {
         // Query a very short recent period (might have no data)
         const endDate = new Date();

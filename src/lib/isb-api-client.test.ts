@@ -6,7 +6,7 @@ vi.mock("@aws-sdk/client-lambda", async () => {
   const actual = await vi.importActual("@aws-sdk/client-lambda");
   return {
     ...actual,
-    LambdaClient: vi.fn(),
+    LambdaClient: vi.fn(function() {}),
   };
 });
 
@@ -15,11 +15,13 @@ describe("isb-api-client", () => {
 
   beforeEach(() => {
     vi.resetModules();
-    mockSend = vi.fn();
+    mockSend = vi.fn(function() {});
     (LambdaClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-      () => ({
-        send: mockSend,
-      })
+      function() {
+        return {
+          send: mockSend,
+        };
+      }
     );
   });
 
