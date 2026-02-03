@@ -414,6 +414,9 @@ describe("cost-collector-handler - Performance Tests", () => {
     const { generateCsv } = await import("../lib/csv-generator.js");
 
     const costReport = {
+      accountId: "123456789012",
+      startDate: "2026-01-01",
+      endDate: "2026-01-31",
       totalCost: 1000.0,
       costsByService: Array.from({ length: 1000 }, (_, i) => ({
         serviceName: `Service-${i.toString().padStart(4, "0")}`,

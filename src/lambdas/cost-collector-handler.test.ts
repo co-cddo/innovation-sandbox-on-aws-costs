@@ -5,6 +5,26 @@ import {
   ResourceNotFoundException,
 } from "@aws-sdk/client-scheduler";
 
+// Mock AWS X-Ray SDK
+vi.mock("aws-xray-sdk-core", () => ({
+  setContextMissingStrategy: vi.fn(),
+  getSegment: vi.fn().mockReturnValue({
+    addNewSubsegment: vi.fn().mockReturnValue({
+      addAnnotation: vi.fn(),
+      addMetadata: vi.fn(),
+      close: vi.fn(),
+    }),
+  }),
+}));
+
+// Mock CloudWatch client
+vi.mock("@aws-sdk/client-cloudwatch", () => ({
+  CloudWatchClient: vi.fn().mockImplementation(() => ({
+    send: vi.fn().mockResolvedValue({}),
+  })),
+  PutMetricDataCommand: vi.fn(),
+}));
+
 // Mock only external dependencies and AWS services
 vi.mock("@aws-sdk/client-scheduler", async () => {
   const actual = await vi.importActual("@aws-sdk/client-scheduler");
