@@ -486,7 +486,7 @@ describe("LeaseTerminatedEventSchema", () => {
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error.issues[0].path).toEqual(["detail", "leaseId", "uuid"]);
-        expect(result.error.issues[0].message).toContain("UUID v4");
+        expect(result.error.issues[0].message).toContain("Invalid UUID");
       }
     });
   });
