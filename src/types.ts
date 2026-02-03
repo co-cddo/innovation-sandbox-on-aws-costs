@@ -16,3 +16,11 @@ export interface CliOptions {
   startTime: string;
   endTime: string;
 }
+
+// Re-export Lambda event types from schemas
+export type {
+  LeaseTerminatedEvent,
+  SchedulerPayload,
+  LeaseCostsGeneratedDetail,
+  LeaseDetails,
+} from "./lib/schemas.js";

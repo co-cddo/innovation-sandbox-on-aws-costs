@@ -1,0 +1,51 @@
+{
+  "$schema": "cost-explorer-response",
+  "description": "Final page of Cost Explorer pagination - 2 services, no NextPageToken",
+  "ResultsByTime": [
+    {
+      "TimePeriod": {
+        "Start": "2026-01-04",
+        "End": "2026-01-05"
+      },
+      "Groups": [
+        {
+          "Keys": ["Amazon Elastic Compute Cloud - Compute"],
+          "Metrics": {
+            "UnblendedCost": {
+              "Amount": "47.8901",
+              "Unit": "USD"
+            }
+          }
+        },
+        {
+          "Keys": ["Amazon Simple Storage Service"],
+          "Metrics": {
+            "UnblendedCost": {
+              "Amount": "10.1234",
+              "Unit": "USD"
+            }
+          }
+        },
+        {
+          "Keys": ["AWS Lambda"],
+          "Metrics": {
+            "UnblendedCost": {
+              "Amount": "8.5678",
+              "Unit": "USD"
+            }
+          }
+        },
+        {
+          "Keys": ["Amazon DynamoDB"],
+          "Metrics": {
+            "UnblendedCost": {
+              "Amount": "6.3456",
+              "Unit": "USD"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "DimensionValueAttributes": []
+}

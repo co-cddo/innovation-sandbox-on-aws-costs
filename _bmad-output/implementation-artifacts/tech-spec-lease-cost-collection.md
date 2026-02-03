@@ -2,7 +2,7 @@
 title: 'Event-Driven Lease Cost Collection Service'
 slug: 'lease-cost-collection'
 created: '2026-02-02'
-status: 'approved'
+status: 'completed'
 stepsCompleted: [1, 2, 3, 4]
 tech_stack:
   - TypeScript (ESM modules)
@@ -207,7 +207,7 @@ infra/
 
 ### Task 1: Project Setup & Dependencies
 
-- [ ] **1.1: Update package.json with new dependencies**
+- [x] **1.1: Update package.json with new dependencies**
   - File: `package.json`
   - Action: Add dependencies:
     - `@aws-sdk/client-s3`
@@ -231,7 +231,7 @@ infra/
     - `"lint": "tsc --noEmit"`
     - `"cdk": "cdk"`
 
-- [ ] **1.2: Create vitest.config.ts**
+- [x] **1.2: Create vitest.config.ts**
   - File: `vitest.config.ts`
   - Action: Configure vitest with:
     - `globals: true`
@@ -242,13 +242,13 @@ infra/
   - Action: Update `tsconfig.json` compilerOptions:
     - Add `"types": ["vitest/globals"]` for TypeScript to recognize test globals (`describe`, `it`, `expect`)
 
-- [ ] **1.3: Create tsconfig for infra**
+- [x] **1.3: Create tsconfig for infra**
   - File: `infra/tsconfig.json`
   - Action: Extend root tsconfig, set `outDir: './cdk.out'`
 
 ### Task 2: Core Library Modules
 
-- [ ] **2.1: Create date-utils.ts**
+- [x] **2.1: Create date-utils.ts**
   - File: `src/lib/date-utils.ts`
   - Action: Implement billing window calculation:
     ```typescript
@@ -266,35 +266,35 @@ infra/
   - Example: Start `2026-01-15T10:00:00Z`, End `2026-02-02T15:30:00Z`, 8hr padding
     → start: `2026-01-15`, end: `2026-02-03`
 
-- [ ] **2.2: Create csv-generator.ts**
+- [x] **2.2: Create csv-generator.ts**
   - File: `src/lib/csv-generator.ts`
   - Action: Implement `generateCsv(report: CostReport): string`
   - Format: `Service,Cost\n` header + one row per service, sorted by cost descending
   - Handle empty report: return header only
   - **CSV escaping:** Wrap values containing commas/quotes in double quotes, escape internal quotes by doubling (RFC 4180). AWS service names are unlikely to need this but handle defensively.
 
-- [ ] **2.3: Create assume-role.ts**
+- [x] **2.3: Create assume-role.ts**
   - File: `src/lib/assume-role.ts`
   - Action: Implement `assumeCostExplorerRole(roleArn: string): Promise<AwsCredentialIdentity>`
   - Use STSClient with AssumeRoleCommand
   - Session name: `lease-costs-${Date.now()}`
   - Return credentials object for Cost Explorer client
 
-- [ ] **2.4: Create s3-uploader.ts**
+- [x] **2.4: Create s3-uploader.ts**
   - File: `src/lib/s3-uploader.ts`
   - Action: Implement `uploadCsv(bucket: string, key: string, csv: string): Promise<void>`
     - Set `ContentType: 'text/csv'` in PutObjectCommand
   - Action: Implement `getPresignedUrl(bucket: string, key: string, expiresInDays: number): Promise<{ url: string, expiresAt: Date }>`
   - Use PutObjectCommand and getSignedUrl from s3-request-presigner
 
-- [ ] **2.5: Create event-emitter.ts**
+- [x] **2.5: Create event-emitter.ts**
   - File: `src/lib/event-emitter.ts`
   - Action: Implement `emitLeaseCostsGenerated(eventBusName: string, detail: LeaseCostsGeneratedDetail): Promise<void>`
   - Use EventBridgeClient with PutEventsCommand
   - Source: `isb-costs`
   - DetailType: `LeaseCostsGenerated`
 
-- [ ] **2.6: Create isb-api-client.ts**
+- [x] **2.6: Create isb-api-client.ts**
   - File: `src/lib/isb-api-client.ts`
   - Action: Implement ISB API client following pattern from `innovation-sandbox-on-aws-approver/src/services/isb-lambda.ts`
   - Methods:
@@ -313,7 +313,7 @@ infra/
 
 ### Task 3: Extend Types & Schemas
 
-- [ ] **3.1: Add Zod schemas for runtime validation**
+- [x] **3.1: Add Zod schemas for runtime validation**
   - File: `src/lib/schemas.ts`
   - Action: Create Zod schemas for all event types:
     ```typescript
@@ -366,7 +366,7 @@ infra/
     - `LeaseCostsGeneratedDetailSchema` validates detail portion only (used with PutEvents which wraps it)
     - `LeaseDetailsSchema` validates ISB API response (partial - only fields we need)
 
-- [ ] **3.2: Add type exports to types.ts**
+- [x] **3.2: Add type exports to types.ts**
   - File: `src/types.ts`
   - Action: Re-export types from schemas:
     ```typescript
@@ -375,7 +375,7 @@ infra/
 
 ### Task 4: Refactor Cost Explorer for Lambda
 
-- [ ] **4.1: Extract credential provider and fix filter bug**
+- [x] **4.1: Extract credential provider and fix filter bug**
   - File: `src/lib/cost-explorer.ts` (move from `src/cost-explorer.ts`)
   - Action: Refactor `createCostExplorerClient` to accept optional credentials:
     ```typescript
@@ -387,14 +387,14 @@ infra/
   - Remove `Math.abs()` since usage costs are positive
   - **Add pagination:** Handle `NextPageToken` in response, loop until all pages retrieved
 
-- [ ] **4.2: Update CLI to use refactored module**
+- [x] **4.2: Update CLI to use refactored module**
   - File: `src/index.ts`
   - Action: Update import path to `./lib/cost-explorer.js`
   - Ensure CLI still works with no behavior change
 
 ### Task 5: Lambda Handlers
 
-- [ ] **5.1: Create scheduler-handler.ts**
+- [x] **5.1: Create scheduler-handler.ts**
   - File: `src/lambdas/scheduler-handler.ts`
   - Action: Implement handler that:
     1. Validates LeaseTerminated event using `LeaseTerminatedEventSchema.safeParse()`
@@ -410,7 +410,7 @@ infra/
     7. On `ConflictException` (duplicate schedule name): log warning and return success (idempotent)
   - Env vars: `DELAY_HOURS`, `SCHEDULER_GROUP`, `SCHEDULER_ROLE_ARN`, `COST_COLLECTOR_LAMBDA_ARN`
 
-- [ ] **5.2: Create cost-collector-handler.ts**
+- [x] **5.2: Create cost-collector-handler.ts**
   - File: `src/lambdas/cost-collector-handler.ts`
   - Action: Implement handler that:
     1. Validates SchedulerPayload using `SchedulerPayloadSchema.safeParse()`
@@ -431,7 +431,7 @@ infra/
 
 ### Task 6: Unit Tests
 
-- [ ] **6.1: Test date-utils**
+- [x] **6.1: Test date-utils**
   - File: `src/lib/date-utils.test.ts`
   - Cases (must specify BOTH leaseStartDate and leaseEndTimestamp):
     - Start `2026-01-15T10:00Z`, End `2026-02-02T15:00Z`, 8hr padding → startDate=`2026-01-15`, endDate=`2026-02-03`
@@ -441,7 +441,7 @@ infra/
     - **UTC input** (`2026-02-02T15:30:00Z`) → handles correctly
     - Invalid timestamp → throws with clear message
 
-- [ ] **6.2: Test csv-generator**
+- [x] **6.2: Test csv-generator**
   - File: `src/lib/csv-generator.test.ts`
   - Cases:
     - Normal report → correct CSV format
@@ -449,14 +449,14 @@ infra/
     - Sorted by cost descending
     - **CSV escaping** → service name with comma/quote is properly escaped per RFC 4180
 
-- [ ] **6.3: Test assume-role**
+- [x] **6.3: Test assume-role**
   - File: `src/lib/assume-role.test.ts`
   - Cases:
     - Successful assume role → returns credentials
     - AccessDenied → throws with clear message
     - Network error → throws
 
-- [ ] **6.4: Test scheduler-handler**
+- [x] **6.4: Test scheduler-handler**
   - File: `src/lambdas/scheduler-handler.test.ts`
   - Mock SchedulerClient
   - Cases:
@@ -467,7 +467,7 @@ infra/
     - **ConflictException (duplicate)** → logs warning, returns success (idempotent)
     - Invalid DELAY_HOURS env var → throws at startup
 
-- [ ] **6.5: Test cost-collector-handler**
+- [x] **6.5: Test cost-collector-handler**
   - File: `src/lambdas/cost-collector-handler.test.ts`
   - Mock all AWS clients (including LambdaClient for ISB API)
   - Cases:
@@ -482,7 +482,7 @@ infra/
     - **Schedule delete fails (other error)** → logs error, completes successfully (best-effort cleanup)
     - Invalid payload (fails Zod) → throws with clear message
 
-- [ ] **6.6: Test isb-api-client**
+- [x] **6.6: Test isb-api-client**
   - File: `src/lib/isb-api-client.test.ts`
   - Mock LambdaClient
   - Cases:
@@ -492,7 +492,7 @@ infra/
     - getLeaseDetails Lambda error → throws
     - getLeaseDetails invalid response (fails schema) → throws Zod validation error
 
-- [ ] **6.7: Test cost-explorer (refactored)**
+- [x] **6.7: Test cost-explorer (refactored)**
   - File: `src/lib/cost-explorer.test.ts`
   - Mock CostExplorerClient
   - Cases:
@@ -504,7 +504,7 @@ infra/
     - getCosts empty response → returns empty costsByService array
     - getCosts API error → throws with clear message
 
-- [ ] **6.8: Test s3-uploader**
+- [x] **6.8: Test s3-uploader**
   - File: `src/lib/s3-uploader.test.ts`
   - Mock S3Client
   - Cases:
@@ -514,7 +514,7 @@ infra/
     - getPresignedUrl with custom expiry → calculates correct expiration
     - getPresignedUrl failure → throws with clear message
 
-- [ ] **6.9: Test event-emitter**
+- [x] **6.9: Test event-emitter**
   - File: `src/lib/event-emitter.test.ts`
   - Mock EventBridgeClient
   - Cases:
@@ -524,7 +524,7 @@ infra/
 
 ### Task 7: CDK Infrastructure
 
-- [ ] **7.1: Create CDK app entrypoint and configuration**
+- [x] **7.1: Create CDK app entrypoint and configuration**
   - File: `infra/bin/app.ts`
   - Action: Instantiate App, create CostCollectionStack
   - Pass context values: environment, hubAccountId, orgMgmtAccountId, eventBusName, costExplorerRoleArn
@@ -534,7 +534,7 @@ infra/
     - `context`: default values for development
     - `requireApproval`: `"never"` for CI/CD
 
-- [ ] **7.2: Create main stack**
+- [x] **7.2: Create main stack**
   - File: `infra/lib/cost-collection-stack.ts`
   - Action: Create stack with:
     - S3 bucket with configurable name (default: `isb-lease-costs-${account}-${region}`):
@@ -562,7 +562,7 @@ infra/
     - SNS topic for operational alerts
   - Reference: billing-separator hub-stack.ts
 
-- [ ] **7.3: Configure Lambda IAM permissions**
+- [x] **7.3: Configure Lambda IAM permissions**
   - File: `infra/lib/cost-collection-stack.ts`
   - Scheduler Lambda:
     - `scheduler:CreateSchedule` on scheduler group
@@ -576,12 +576,12 @@ infra/
     - `scheduler:DeleteSchedule` on scheduler group
     - `sqs:SendMessage` on DLQ (for failure destination)
 
-- [ ] **7.4: Add CDK snapshot tests**
+- [x] **7.4: Add CDK snapshot tests**
   - File: `infra/lib/cost-collection-stack.test.ts`
   - Action: Template.fromStack snapshot test
   - Verify IAM policies, Lambda configs, S3 lifecycle
 
-- [ ] **7.5: Add CloudWatch alarms**
+- [x] **7.5: Add CloudWatch alarms**
   - File: `infra/lib/cost-collection-stack.ts`
   - Action: Create alarms with SNS actions:
     - **DLQ Alarm:** ApproximateNumberOfMessagesVisible >= 1 on Cost Collector DLQ
@@ -593,7 +593,7 @@ infra/
 
 ### Task 8: CI/CD Workflows
 
-- [ ] **8.1: Create ci.yml**
+- [x] **8.1: Create ci.yml**
   - File: `.github/workflows/ci.yml`
   - Triggers: push to any branch, PR to main
   - Jobs:
@@ -604,7 +604,7 @@ infra/
     - `npm run build`
     - `npx cdk synth` with dummy context values (validates CDK stack compiles)
 
-- [ ] **8.2: Create deploy.yml**
+- [x] **8.2: Create deploy.yml**
   - File: `.github/workflows/deploy.yml`
   - Triggers: workflow_dispatch only
   - **Branch restriction:** Add condition `if: github.ref == 'refs/heads/main'` to prevent deploys from non-main branches
@@ -617,7 +617,7 @@ infra/
 
 ### Task 9: Documentation
 
-- [ ] **9.1: Update README.md**
+- [x] **9.1: Update README.md**
   - File: `README.md`
   - Action: Add sections:
     - Architecture diagram (ASCII)
@@ -627,7 +627,7 @@ infra/
     - Failure modes table
     - Local development setup
 
-- [ ] **9.2: Document cross-account role setup**
+- [x] **9.2: Document cross-account role setup**
   - File: `README.md`
   - Action: Add section explaining:
     - Required role in orgManagement account
@@ -640,83 +640,83 @@ infra/
 
 ### Core Functionality
 
-- [ ] **AC1:** Given a `LeaseTerminated` event is published to the ISB event bus, when the Scheduler Lambda processes it, then a one-shot EventBridge schedule is created with a 24-hour delay (configurable via `DELAY_HOURS`).
+- [x] **AC1:** Given a `LeaseTerminated` event is published to the ISB event bus, when the Scheduler Lambda processes it, then a one-shot EventBridge schedule is created with a 24-hour delay (configurable via `DELAY_HOURS`).
 
-- [ ] **AC2:** Given the scheduled time arrives, when the Cost Collector Lambda executes, then it assumes the cross-account role in orgManagement and queries Cost Explorer for the account's billing data.
+- [x] **AC2:** Given the scheduled time arrives, when the Cost Collector Lambda executes, then it assumes the cross-account role in orgManagement and queries Cost Explorer for the account's billing data.
 
-- [ ] **AC3:** Given billing data is retrieved, when the Lambda processes it, then a CSV file is generated with `Service,Cost` columns and uploaded to S3 as `${leaseId}.csv`.
+- [x] **AC3:** Given billing data is retrieved, when the Lambda processes it, then a CSV file is generated with `Service,Cost` columns and uploaded to S3 as `${leaseId}.csv`.
 
-- [ ] **AC4:** Given the CSV is uploaded, when a presigned URL is generated, then the URL is valid for 7 days (configurable via `PRESIGNED_URL_EXPIRY_DAYS`).
+- [x] **AC4:** Given the CSV is uploaded, when a presigned URL is generated, then the URL is valid for 7 days (configurable via `PRESIGNED_URL_EXPIRY_DAYS`).
 
-- [ ] **AC5:** Given the presigned URL is generated, when the Lambda emits the `LeaseCostsGenerated` event, then the event contains leaseId, accountId, totalCost, csvUrl, and urlExpiresAt.
+- [x] **AC5:** Given the presigned URL is generated, when the Lambda emits the `LeaseCostsGenerated` event, then the event contains leaseId, accountId, totalCost, csvUrl, and urlExpiresAt.
 
 ### Billing Window
 
-- [ ] **AC6:** Given a lease starts at 10:00 UTC on Jan 15 and ends at 15:00 UTC on Feb 2, when billing window is calculated with 8-hour padding, then the start date is Jan 15 (10:00 - 8hr = 02:00 same day) and end date is Feb 3 (15:00 + 8hr = 23:00, rounded up).
+- [x] **AC6:** Given a lease starts at 10:00 UTC on Jan 15 and ends at 15:00 UTC on Feb 2, when billing window is calculated with 8-hour padding, then the start date is Jan 15 (10:00 - 8hr = 02:00 same day) and end date is Feb 3 (15:00 + 8hr = 23:00, rounded up).
 
-- [ ] **AC7:** Given a lease ends at 02:00 UTC on Feb 2, when billing window is calculated with 8-hour padding, then the end date is Feb 3 (02:00 + 8hr = 10:00 on Feb 2, rounded up to next day start = Feb 3).
+- [x] **AC7:** Given a lease ends at 02:00 UTC on Feb 2, when billing window is calculated with 8-hour padding, then the end date is Feb 3 (02:00 + 8hr = 10:00 on Feb 2, rounded up to next day start = Feb 3).
 
 ### Error Handling
 
-- [ ] **AC8:** Given Cost Explorer returns zero costs, when the Lambda processes it, then a CSV with headers only is uploaded and `LeaseCostsGenerated` is emitted with `totalCost: 0`.
+- [x] **AC8:** Given Cost Explorer returns zero costs, when the Lambda processes it, then a CSV with headers only is uploaded and `LeaseCostsGenerated` is emitted with `totalCost: 0`.
 
-- [ ] **AC9:** Given the STS AssumeRole call fails, when the Lambda handles the error, then it throws and the event is retried (no partial state).
+- [x] **AC9:** Given the STS AssumeRole call fails, when the Lambda handles the error, then it throws and the event is retried (no partial state).
 
-- [ ] **AC10:** Given S3 upload fails, when the Lambda handles the error, then it throws without emitting the `LeaseCostsGenerated` event.
+- [x] **AC10:** Given S3 upload fails, when the Lambda handles the error, then it throws without emitting the `LeaseCostsGenerated` event.
 
 ### Infrastructure
 
-- [ ] **AC11:** Given the S3 bucket is created, then it has a lifecycle rule that expires objects after 3 years (1095 days).
+- [x] **AC11:** Given the S3 bucket is created, then it has a lifecycle rule that expires objects after 3 years (1095 days).
 
-- [ ] **AC12:** Given the CDK stack is deployed, then Lambda functions use Node.js 22 runtime and ARM_64 architecture.
+- [x] **AC12:** Given the CDK stack is deployed, then Lambda functions use Node.js 22 runtime and ARM_64 architecture.
 
-- [ ] **AC13:** Given the Scheduler Lambda IAM role, then it only has permissions to create schedules in the designated scheduler group and pass the scheduler execution role.
+- [x] **AC13:** Given the Scheduler Lambda IAM role, then it only has permissions to create schedules in the designated scheduler group and pass the scheduler execution role.
 
 ### CI/CD
 
-- [ ] **AC14:** Given a push to any branch, when CI runs, then lint, test, build, and CDK synth all pass.
+- [x] **AC14:** Given a push to any branch, when CI runs, then lint, test, build, and CDK synth all pass.
 
-- [ ] **AC15:** Given a manual deploy trigger on main branch, when deploy runs, then it uses OIDC to assume the deployment role and deploys the CDK stack to us-west-2.
+- [x] **AC15:** Given a manual deploy trigger on main branch, when deploy runs, then it uses OIDC to assume the deployment role and deploys the CDK stack to us-west-2.
 
 ### CLI Backward Compatibility
 
-- [ ] **AC16:** Given the CLI is invoked with `--accountId`, `--startTime`, and `--endTime`, when it executes, then it produces the same markdown output as before the refactor.
+- [x] **AC16:** Given the CLI is invoked with `--accountId`, `--startTime`, and `--endTime`, when it executes, then it produces the same markdown output as before the refactor.
 
 ### Observability
 
-- [ ] **AC17:** Given the Cost Collector Lambda fails after retries, when the failure is processed, then the event is sent to the DLQ and the DLQ alarm fires.
+- [x] **AC17:** Given the Cost Collector Lambda fails after retries, when the failure is processed, then the event is sent to the DLQ and the DLQ alarm fires.
 
-- [ ] **AC18:** Given CloudWatch alarms are configured, when Lambda errors exceed threshold, then SNS notification is published to the alert topic.
+- [x] **AC18:** Given CloudWatch alarms are configured, when Lambda errors exceed threshold, then SNS notification is published to the alert topic.
 
 ### Schedule Cleanup
 
-- [ ] **AC19:** Given the Cost Collector Lambda completes successfully, when it deletes the schedule, then the schedule named in the payload is removed from the scheduler group.
+- [x] **AC19:** Given the Cost Collector Lambda completes successfully, when it deletes the schedule, then the schedule named in the payload is removed from the scheduler group.
 
-- [ ] **AC20:** Given the schedule was already deleted, when the Cost Collector attempts cleanup, then it catches `ResourceNotFoundException` and completes successfully.
+- [x] **AC20:** Given the schedule was already deleted, when the Cost Collector attempts cleanup, then it catches `ResourceNotFoundException` and completes successfully.
 
 ### Bug Fix & Data Integrity
 
-- [ ] **AC21:** Given the Cost Explorer query executes, when it filters by RECORD_TYPE, then it uses `"Usage"` (not Credit/BundledDiscount) to return actual costs.
+- [x] **AC21:** Given the Cost Explorer query executes, when it filters by RECORD_TYPE, then it uses `"Usage"` (not Credit/BundledDiscount) to return actual costs.
 
-- [ ] **AC22:** Given Cost Explorer returns paginated results, when the Lambda processes them, then it follows `NextPageToken` until all pages are retrieved and aggregated.
+- [x] **AC22:** Given Cost Explorer returns paginated results, when the Lambda processes them, then it follows `NextPageToken` until all pages are retrieved and aggregated.
 
 ### Input Validation
 
-- [ ] **AC23:** Given an invalid LeaseTerminated event, when the Scheduler Lambda validates it, then it throws with a Zod validation error message.
+- [x] **AC23:** Given an invalid LeaseTerminated event, when the Scheduler Lambda validates it, then it throws with a Zod validation error message.
 
-- [ ] **AC24:** Given a duplicate LeaseTerminated event, when the Scheduler Lambda attempts to create a schedule, then it handles `ConflictException` gracefully (logs and succeeds).
+- [x] **AC24:** Given a duplicate LeaseTerminated event, when the Scheduler Lambda attempts to create a schedule, then it handles `ConflictException` gracefully (logs and succeeds).
 
 ### Throttling Mitigation
 
-- [ ] **AC25:** Given multiple leases terminate simultaneously, when schedules are created, then each has a random jitter (0-30min) added to the delay to prevent thundering herd.
+- [x] **AC25:** Given multiple leases terminate simultaneously, when schedules are created, then each has a random jitter (0-30min) added to the delay to prevent thundering herd.
 
 ### ISB API Integration
 
-- [ ] **AC26:** Given the Cost Collector Lambda executes, when it queries ISB API for lease details, then it encodes the leaseId as base64 composite key and retrieves the lease `startDate`.
+- [x] **AC26:** Given the Cost Collector Lambda executes, when it queries ISB API for lease details, then it encodes the leaseId as base64 composite key and retrieves the lease `startDate`.
 
-- [ ] **AC27:** Given the ISB API returns lease details, when the billing window is calculated, then it uses `startDate` (from API) to `leaseEndTimestamp` (from event) with padding applied to both ends.
+- [x] **AC27:** Given the ISB API returns lease details, when the billing window is calculated, then it uses `startDate` (from API) to `leaseEndTimestamp` (from event) with padding applied to both ends.
 
-- [ ] **AC28:** Given the ISB API returns a response, when the Cost Collector validates it, then it uses `LeaseDetailsSchema` to ensure required fields (`startDate`, `awsAccountId`) are present and valid.
+- [x] **AC28:** Given the ISB API returns a response, when the Cost Collector validates it, then it uses `LeaseDetailsSchema` to ensure required fields (`startDate`, `awsAccountId`) are present and valid.
 
 ---
 
@@ -857,3 +857,37 @@ permissions:
 | EventBridge emit fails | Lambda throws, retries, then DLQ + alarm | CSV exists but no notification, alarm fires |
 | Schedule creation fails | Scheduler Lambda retries via EventBridge | Delayed collection never triggers if all retries fail |
 | Cost Collector Lambda timeout | Retries, then DLQ + alarm | Partial state possible, alarm fires |
+
+---
+
+## Review Notes
+
+- **Adversarial review completed:** 2026-02-02
+- **Findings:** 20 total, 11 fixed, 9 skipped (noise/undecided/out-of-scope)
+- **Resolution approach:** Auto-fix
+
+### Fixes Applied
+
+1. **F1 (Critical):** Added environment variable validation with `requireEnv()` helper
+2. **F2 (Critical):** Added validation for presigned URL expiry (max 7 days per AWS limits)
+3. **F5 (High):** Moved STS client to module scope for connection reuse
+4. **F7 (High):** Increased Cost Collector Lambda timeout from 60s to 5 minutes
+5. **F8 (Medium):** Added validation for integer env vars (BILLING_PADDING_HOURS, PRESIGNED_URL_EXPIRY_DAYS)
+6. **F10 (Medium):** Improved event emitter error message to include all failed entries and leaseId
+7. **F11 (Medium):** Added sanity check for lease dates (startDate < endDate)
+8. **F17 (Medium):** Added termination protection to CDK stack
+9. **F18 (Medium):** Added `environment: production` to deploy workflow for protection rules
+10. **F20 (Medium):** Enhanced billing window logging to show padding and original dates
+
+### Skipped (Noise/Undecided/Out-of-scope)
+
+- F3 (leaseEndTimestamp race): By design - event receipt time is the termination time
+- F4 (Math.random for jitter): Low risk, acceptable for this use case
+- F6 (ISB API retries): AWS SDK v3 has built-in retries
+- F9 (Idempotency): Would require S3 existence check - scope expansion
+- F12 (Bucket naming): Already includes account+region, collision unlikely
+- F13 (CE throttling alarm): Would need custom metrics - scope expansion
+- F14 (Presigned URL timestamp): Minimal drift, acceptable
+- F15 (Structured logging): Scope expansion for this implementation
+- F16 (ESLint): Out of scope, separate tooling decision
+- F19 (Edge case tests): Scope expansion

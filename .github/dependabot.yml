@@ -1,0 +1,90 @@
+# GitHub Dependabot configuration for automated dependency updates
+# Documentation: https://docs.github.com/en/code-security/dependabot/dependabot-version-updates
+
+version: 2
+updates:
+  # NPM dependencies (application code)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/London"
+    # Group AWS SDK updates together (all @aws-sdk/* packages)
+    groups:
+      aws-sdk:
+        patterns:
+          - "@aws-sdk/*"
+        update-types:
+          - "minor"
+          - "patch"
+    # Limit number of open PRs to avoid overwhelming maintainers
+    open-pull-requests-limit: 10
+    # Auto-merge patch and minor updates for AWS SDK (security updates always require review)
+    # Note: Requires GitHub Actions workflow to auto-merge (see .github/workflows/dependabot-auto-merge.yml)
+    labels:
+      - "dependencies"
+      - "automated"
+    # Commit message prefix for consistency
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+      include: "scope"
+    # Review dependencies in package.json and package-lock.json
+    versioning-strategy: increase
+    # Allow Dependabot to update package-lock.json
+    allow:
+      - dependency-type: "all"
+
+  # GitHub Actions dependencies
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/London"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "chore(ci)"
+
+# Dependabot Security Updates
+# ---------------------------
+# Security updates are enabled separately in GitHub repository settings:
+# Settings > Security > Code security and analysis > Dependabot security updates
+#
+# These run automatically when vulnerabilities are detected (not on a schedule)
+# and create separate PRs with higher priority than version updates.
+#
+# Configure at: https://github.com/[org]/[repo]/settings/security_analysis
+
+# Auto-Merge Strategy (Optional)
+# -------------------------------
+# To enable auto-merge for low-risk updates, create .github/workflows/dependabot-auto-merge.yml:
+#
+# name: Dependabot Auto-Merge
+# on: pull_request
+# permissions:
+#   contents: write
+#   pull-requests: write
+# jobs:
+#   auto-merge:
+#     runs-on: ubuntu-latest
+#     if: github.actor == 'dependabot[bot]'
+#     steps:
+#       - name: Enable auto-merge for Dependabot PRs
+#         run: gh pr merge --auto --squash "$PR_URL"
+#         env:
+#           PR_URL: ${{ github.event.pull_request.html_url }}
+#           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#
+# Only enable auto-merge if:
+# 1. CI pipeline includes comprehensive tests (already present)
+# 2. PRs are monitored for failed tests
+# 3. Team agrees to auto-merge strategy
+#
+# Otherwise, manually review and merge Dependabot PRs weekly.

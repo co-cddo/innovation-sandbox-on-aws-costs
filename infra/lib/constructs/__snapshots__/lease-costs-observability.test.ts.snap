@@ -1,0 +1,322 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`LeaseCostsObservability > snapshot > should match snapshot 1`] = `
+{
+  "Outputs": {
+    "ObservabilityAlertTopicArnDE363EC1": {
+      "Description": "SNS topic for operational alerts",
+      "Value": {
+        "Ref": "ObservabilityAlertTopic4533A39D",
+      },
+    },
+  },
+  "Parameters": {
+    "BootstrapVersion": {
+      "Default": "/cdk-bootstrap/hnb659fds/version",
+      "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+  },
+  "Resources": {
+    "CostCollectorDlq7F100A4E": {
+      "DeletionPolicy": "Delete",
+      "Type": "AWS::SQS::Queue",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "CostCollectorLambda9BACFD53": {
+      "DependsOn": [
+        "CostCollectorLambdaServiceRole7DD339B2",
+      ],
+      "Properties": {
+        "Code": {
+          "ZipFile": "exports.handler = async () => {}",
+        },
+        "Handler": "index.handler",
+        "Role": {
+          "Fn::GetAtt": [
+            "CostCollectorLambdaServiceRole7DD339B2",
+            "Arn",
+          ],
+        },
+        "Runtime": "nodejs22.x",
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "CostCollectorLambdaServiceRole7DD339B2": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "EventRuleDlq84CB8C02": {
+      "DeletionPolicy": "Delete",
+      "Type": "AWS::SQS::Queue",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "ObservabilityAlertTopic4533A39D": {
+      "Properties": {
+        "DisplayName": "ISB Lease Costs Alerts",
+      },
+      "Type": "AWS::SNS::Topic",
+    },
+    "ObservabilityAlertTopictestexamplecom1DD969DC": {
+      "Properties": {
+        "Endpoint": "test@example.com",
+        "Protocol": "email",
+        "TopicArn": {
+          "Ref": "ObservabilityAlertTopic4533A39D",
+        },
+      },
+      "Type": "AWS::SNS::Subscription",
+    },
+    "ObservabilityCollectorDlqAlarm74773D31": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Ref": "ObservabilityAlertTopic4533A39D",
+          },
+        ],
+        "AlarmDescription": "Cost Collector Lambda failures detected in DLQ",
+        "AlarmName": "isb-lease-costs-collector-dlq",
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "Dimensions": [
+          {
+            "Name": "QueueName",
+            "Value": {
+              "Fn::GetAtt": [
+                "CostCollectorDlq7F100A4E",
+                "QueueName",
+              ],
+            },
+          },
+        ],
+        "EvaluationPeriods": 1,
+        "MetricName": "ApproximateNumberOfMessagesVisible",
+        "Namespace": "AWS/SQS",
+        "Period": 300,
+        "Statistic": "Maximum",
+        "Threshold": 1,
+        "TreatMissingData": "notBreaching",
+      },
+      "Type": "AWS::CloudWatch::Alarm",
+    },
+    "ObservabilityCollectorDurationAlarm2C216894": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Ref": "ObservabilityAlertTopic4533A39D",
+          },
+        ],
+        "AlarmDescription": "Cost Collector Lambda duration approaching timeout (12 min threshold for 15 min timeout)",
+        "AlarmName": "isb-lease-costs-collector-duration",
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "Dimensions": [
+          {
+            "Name": "FunctionName",
+            "Value": {
+              "Ref": "CostCollectorLambda9BACFD53",
+            },
+          },
+        ],
+        "EvaluationPeriods": 1,
+        "MetricName": "Duration",
+        "Namespace": "AWS/Lambda",
+        "Period": 300,
+        "Statistic": "Maximum",
+        "Threshold": 720000,
+        "TreatMissingData": "notBreaching",
+      },
+      "Type": "AWS::CloudWatch::Alarm",
+    },
+    "ObservabilityCollectorErrorsAlarm46C890F9": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Ref": "ObservabilityAlertTopic4533A39D",
+          },
+        ],
+        "AlarmDescription": "Cost Collector Lambda errors exceed threshold",
+        "AlarmName": "isb-lease-costs-collector-errors",
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "Dimensions": [
+          {
+            "Name": "FunctionName",
+            "Value": {
+              "Ref": "CostCollectorLambda9BACFD53",
+            },
+          },
+        ],
+        "EvaluationPeriods": 1,
+        "MetricName": "Errors",
+        "Namespace": "AWS/Lambda",
+        "Period": 300,
+        "Statistic": "Sum",
+        "Threshold": 3,
+        "TreatMissingData": "notBreaching",
+      },
+      "Type": "AWS::CloudWatch::Alarm",
+    },
+    "ObservabilityRuleDlqAlarmC94F88AF": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Ref": "ObservabilityAlertTopic4533A39D",
+          },
+        ],
+        "AlarmDescription": "EventBridge Rule delivery failures detected in DLQ",
+        "AlarmName": "isb-lease-costs-rule-dlq",
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "Dimensions": [
+          {
+            "Name": "QueueName",
+            "Value": {
+              "Fn::GetAtt": [
+                "EventRuleDlq84CB8C02",
+                "QueueName",
+              ],
+            },
+          },
+        ],
+        "EvaluationPeriods": 1,
+        "MetricName": "ApproximateNumberOfMessagesVisible",
+        "Namespace": "AWS/SQS",
+        "Period": 300,
+        "Statistic": "Maximum",
+        "Threshold": 1,
+        "TreatMissingData": "notBreaching",
+      },
+      "Type": "AWS::CloudWatch::Alarm",
+    },
+    "ObservabilitySchedulerErrorsAlarm53159D27": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Ref": "ObservabilityAlertTopic4533A39D",
+          },
+        ],
+        "AlarmDescription": "Scheduler Lambda errors exceed threshold",
+        "AlarmName": "isb-lease-costs-scheduler-errors",
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "Dimensions": [
+          {
+            "Name": "FunctionName",
+            "Value": {
+              "Ref": "SchedulerLambdaBF444921",
+            },
+          },
+        ],
+        "EvaluationPeriods": 1,
+        "MetricName": "Errors",
+        "Namespace": "AWS/Lambda",
+        "Period": 300,
+        "Statistic": "Sum",
+        "Threshold": 3,
+        "TreatMissingData": "notBreaching",
+      },
+      "Type": "AWS::CloudWatch::Alarm",
+    },
+    "SchedulerLambdaBF444921": {
+      "DependsOn": [
+        "SchedulerLambdaServiceRoleD4D6A486",
+      ],
+      "Properties": {
+        "Code": {
+          "ZipFile": "exports.handler = async () => {}",
+        },
+        "Handler": "index.handler",
+        "Role": {
+          "Fn::GetAtt": [
+            "SchedulerLambdaServiceRoleD4D6A486",
+            "Arn",
+          ],
+        },
+        "Runtime": "nodejs22.x",
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "SchedulerLambdaServiceRoleD4D6A486": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+  },
+  "Rules": {
+    "CheckBootstrapVersion": {
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Contains": [
+                  [
+                    "1",
+                    "2",
+                    "3",
+                    "4",
+                    "5",
+                  ],
+                  {
+                    "Ref": "BootstrapVersion",
+                  },
+                ],
+              },
+            ],
+          },
+          "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI.",
+        },
+      ],
+    },
+  },
+}
+`;
