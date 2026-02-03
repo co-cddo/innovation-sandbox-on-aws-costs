@@ -11,16 +11,29 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "Europe/London"
-    # Group AWS SDK updates together (all @aws-sdk/* packages)
+    # Group dependencies by type to reduce PR noise
     groups:
+      # AWS SDK packages
       aws-sdk:
         patterns:
           - "@aws-sdk/*"
         update-types:
           - "minor"
           - "patch"
+      # All production dependencies (exclude dev dependencies)
+      production-dependencies:
+        dependency-type: "production"
+        update-types:
+          - "minor"
+          - "patch"
+      # Development dependencies
+      development-dependencies:
+        dependency-type: "development"
+        update-types:
+          - "minor"
+          - "patch"
     # Limit number of open PRs to avoid overwhelming maintainers
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
     # Auto-merge patch and minor updates for AWS SDK (security updates always require review)
     # Note: Requires GitHub Actions workflow to auto-merge (see .github/workflows/dependabot-auto-merge.yml)
     labels:
@@ -45,7 +58,15 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "Europe/London"
-    open-pull-requests-limit: 5
+    # Group all GitHub Actions updates together
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    open-pull-requests-limit: 2
     labels:
       - "dependencies"
       - "github-actions"
