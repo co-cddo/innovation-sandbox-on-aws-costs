@@ -6,7 +6,7 @@ vi.mock("@aws-sdk/client-sts", async () => {
   const actual = await vi.importActual("@aws-sdk/client-sts");
   return {
     ...actual,
-    STSClient: vi.fn(),
+    STSClient: vi.fn(function() {}),
   };
 });
 
@@ -15,11 +15,13 @@ describe("assumeCostExplorerRole", () => {
 
   beforeEach(() => {
     vi.resetModules();
-    mockSend = vi.fn();
+    mockSend = vi.fn(function() {});
     (STSClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-      () => ({
-        send: mockSend,
-      })
+      function() {
+        return {
+          send: mockSend,
+        };
+      }
     );
   });
 

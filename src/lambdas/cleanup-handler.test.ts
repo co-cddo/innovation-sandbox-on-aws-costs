@@ -13,7 +13,7 @@ vi.mock("@aws-sdk/client-scheduler", async () => {
   const actual = await vi.importActual("@aws-sdk/client-scheduler");
   return {
     ...actual,
-    SchedulerClient: vi.fn(),
+    SchedulerClient: vi.fn(function() {}),
   };
 });
 
@@ -33,11 +33,13 @@ describe("cleanup-handler", () => {
     vi.resetModules();
     vi.clearAllMocks();
 
-    mockSend = vi.fn();
+    mockSend = vi.fn(function() {});
     (SchedulerClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-      () => ({
-        send: mockSend,
-      })
+      function() {
+        return {
+          send: mockSend,
+        };
+      }
     );
 
     // Set environment variables

@@ -11,7 +11,7 @@ vi.mock("@aws-sdk/client-s3", async () => {
   const actual = await vi.importActual("@aws-sdk/client-s3");
   return {
     ...actual,
-    S3Client: vi.fn(),
+    S3Client: vi.fn(function() {}),
   };
 });
 
@@ -24,11 +24,13 @@ describe("s3-uploader", () => {
 
   beforeEach(() => {
     vi.resetModules();
-    mockSend = vi.fn();
+    mockSend = vi.fn(function() {});
     (S3Client as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-      () => ({
-        send: mockSend,
-      })
+      function() {
+        return {
+          send: mockSend,
+        };
+      }
     );
     vi.mocked(getSignedUrl).mockReset();
   });

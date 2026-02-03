@@ -62,22 +62,22 @@ import {
 // Mock AWS SDK clients
 vi.mock("@aws-sdk/client-cost-explorer", async () => {
   const actual = await vi.importActual("@aws-sdk/client-cost-explorer");
-  return { ...actual, CostExplorerClient: vi.fn() };
+  return { ...actual, CostExplorerClient: vi.fn(function() {}) };
 });
 
 vi.mock("@aws-sdk/client-scheduler", async () => {
   const actual = await vi.importActual("@aws-sdk/client-scheduler");
-  return { ...actual, SchedulerClient: vi.fn() };
+  return { ...actual, SchedulerClient: vi.fn(function() {}) };
 });
 
 vi.mock("@aws-sdk/client-cloudwatch", async () => {
   const actual = await vi.importActual("@aws-sdk/client-cloudwatch");
-  return { ...actual, CloudWatchClient: vi.fn() };
+  return { ...actual, CloudWatchClient: vi.fn(function() {}) };
 });
 
 vi.mock("@aws-sdk/client-eventbridge", async () => {
   const actual = await vi.importActual("@aws-sdk/client-eventbridge");
-  return { ...actual, EventBridgeClient: vi.fn() };
+  return { ...actual, EventBridgeClient: vi.fn(function() {}) };
 });
 
 // Mock S3 uploader module to avoid presigned URL issues
@@ -94,12 +94,12 @@ vi.mock("../lib/s3-uploader.js", () => ({
 
 vi.mock("@aws-sdk/client-lambda", async () => {
   const actual = await vi.importActual("@aws-sdk/client-lambda");
-  return { ...actual, LambdaClient: vi.fn() };
+  return { ...actual, LambdaClient: vi.fn(function() {}) };
 });
 
 vi.mock("@aws-sdk/client-sts", async () => {
   const actual = await vi.importActual("@aws-sdk/client-sts");
-  return { ...actual, STSClient: vi.fn() };
+  return { ...actual, STSClient: vi.fn(function() {}) };
 });
 
 vi.mock("../lib/logger.js", () => ({
@@ -122,30 +122,30 @@ describe("cost-collector-handler - Performance Tests", () => {
   beforeEach(async () => {
     vi.resetModules();
 
-    mockCostExplorerSend = vi.fn();
-    mockSchedulerSend = vi.fn();
-    mockCloudWatchSend = vi.fn();
-    mockEventBridgeSend = vi.fn();
-    mockLambdaSend = vi.fn();
-    mockSTSSend = vi.fn();
+    mockCostExplorerSend = vi.fn(function() {});
+    mockSchedulerSend = vi.fn(function() {});
+    mockCloudWatchSend = vi.fn(function() {});
+    mockEventBridgeSend = vi.fn(function() {});
+    mockLambdaSend = vi.fn(function() {});
+    mockSTSSend = vi.fn(function() {});
 
     (CostExplorerClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-      () => ({ send: mockCostExplorerSend })
+      function() { return { send: mockCostExplorerSend }; }
     );
     (SchedulerClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-      () => ({ send: mockSchedulerSend })
+      function() { return { send: mockSchedulerSend }; }
     );
     (CloudWatchClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-      () => ({ send: mockCloudWatchSend })
+      function() { return { send: mockCloudWatchSend }; }
     );
     (EventBridgeClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-      () => ({ send: mockEventBridgeSend })
+      function() { return { send: mockEventBridgeSend }; }
     );
     (LambdaClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-      () => ({ send: mockLambdaSend })
+      function() { return { send: mockLambdaSend }; }
     );
     (STSClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-      () => ({ send: mockSTSSend })
+      function() { return { send: mockSTSSend }; }
     );
 
     // Set environment variables
@@ -243,7 +243,7 @@ describe("cost-collector-handler - Performance Tests", () => {
       // Log performance metrics
       console.log(`✓ Typical account (50 services): ${elapsedSeconds.toFixed(2)}s`);
     },
-    { timeout: 120000 } // 2-minute test timeout
+    120000 // 2-minute test timeout
   );
 
   /**
@@ -299,7 +299,7 @@ describe("cost-collector-handler - Performance Tests", () => {
       console.log(`✓ Large account (200 services): ${elapsedSeconds.toFixed(2)}s`);
       console.log(`  Memory: ${heapUsedMB.toFixed(2)} MB`);
     },
-    { timeout: 600000 } // 10-minute test timeout
+    600000 // 10-minute test timeout
   );
 
   /**
@@ -363,7 +363,7 @@ describe("cost-collector-handler - Performance Tests", () => {
       console.log(`✓ Pagination (50 pages): ${elapsedSeconds.toFixed(2)}s`);
       console.log(`  Avg per page: ${(elapsedSeconds / TOTAL_PAGES).toFixed(3)}s`);
     },
-    { timeout: 180000 } // 3-minute test timeout
+    180000 // 3-minute test timeout
   );
 
   /**
