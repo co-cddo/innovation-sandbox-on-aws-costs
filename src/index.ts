@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import { Command } from "commander";
-import { getCostData } from "./cost-explorer.js";
+import { getCostData } from "./lib/cost-explorer.js";
 import { generateMarkdownReport } from "./report-generator.js";
+
+const AWS_PROFILE = "NDX/orgManagement";
 
 const program = new Command();
 
@@ -40,11 +42,14 @@ program
         );
       }
 
-      const costReport = await getCostData({
-        accountId: options.accountId,
-        startTime: options.startTime,
-        endTime: options.endTime,
-      });
+      const costReport = await getCostData(
+        {
+          accountId: options.accountId,
+          startTime: options.startTime,
+          endTime: options.endTime,
+        },
+        { profile: AWS_PROFILE }
+      );
 
       const markdown = generateMarkdownReport(costReport);
       console.log(markdown);

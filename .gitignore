@@ -4,3 +4,9 @@ dist/
 .env
 .env.local
 .DS_Store
+
+# CDK
+infra/cdk.out/
+
+# Test coverage
+coverage/

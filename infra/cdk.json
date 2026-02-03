@@ -1,0 +1,27 @@
+{
+  "app": "npx tsx bin/app.ts",
+  "watch": {
+    "include": ["**"],
+    "exclude": [
+      "README.md",
+      "cdk*.json",
+      "**/*.d.ts",
+      "**/*.js",
+      "tsconfig.json",
+      "node_modules",
+      "cdk.out"
+    ]
+  },
+  "context": {
+    "hubAccountId": "568672915267",
+    "orgMgmtAccountId": "955063685555",
+    "eventBusName": "InnovationSandboxComputeISBEventBus6697FE33",
+    "costExplorerRoleArn": "arn:aws:iam::955063685555:role/isb-lease-costs-explorer-role",
+    "isbLeasesLambdaArn": "arn:aws:lambda:us-west-2:568672915267:function:ISB-LeasesLambdaFunction-ndx",
+    "costCollectorLambdaRoleArn": "arn:aws:iam::568672915267:role/IsbCostCollectionStack-CollectorCostCollectorLambda-H1wX9OpNNjRq",
+    "alertEmail": "",
+    "@aws-cdk/aws-lambda:recognizeLayerVersion": true,
+    "@aws-cdk/core:stackRelativeExports": true
+  },
+  "requireApproval": "never"
+}

@@ -1,0 +1,1179 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`CostCollectionStack > should match snapshot 1`] = `
+{
+  "Outputs": {
+    "CollectorCleanupLambdaArnDAC3445A": {
+      "Description": "Cleanup Lambda ARN (runs daily at 2 AM UTC)",
+      "Value": {
+        "Fn::GetAtt": [
+          "CollectorCleanupLambdaBA66A573",
+          "Arn",
+        ],
+      },
+    },
+    "CollectorCostCollectorLambdaArn49E5CA58": {
+      "Description": "Cost Collector Lambda ARN",
+      "Value": {
+        "Fn::GetAtt": [
+          "CollectorCostCollectorLambdaA87A580B",
+          "Arn",
+        ],
+      },
+    },
+    "CollectorCostCollectorLambdaRoleArn2EE0C7BB": {
+      "Description": "Cost Collector Lambda execution role ARN (required for Cost Explorer trust policy)",
+      "Export": {
+        "Name": "IsbLeaseCostsCostCollectorLambdaRoleArn",
+      },
+      "Value": {
+        "Fn::GetAtt": [
+          "CollectorCostCollectorLambdaServiceRole520ED74B",
+          "Arn",
+        ],
+      },
+    },
+    "CollectorSchedulerLambdaArn7F25D2CB": {
+      "Description": "Scheduler Lambda ARN",
+      "Value": {
+        "Fn::GetAtt": [
+          "CollectorSchedulerLambdaA19AC081",
+          "Arn",
+        ],
+      },
+    },
+    "ObservabilityAlertTopicArnDE363EC1": {
+      "Description": "SNS topic for operational alerts",
+      "Value": {
+        "Ref": "ObservabilityAlertTopic4533A39D",
+      },
+    },
+    "StorageBucketName37AA483C": {
+      "Description": "S3 bucket for cost CSV files",
+      "Value": {
+        "Ref": "StorageBucket5CB7C8EA",
+      },
+    },
+  },
+  "Parameters": {
+    "BootstrapVersion": {
+      "Default": "/cdk-bootstrap/hnb659fds/version",
+      "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]",
+      "Type": "AWS::SSM::Parameter::Value<String>",
+    },
+  },
+  "Resources": {
+    "CollectorCleanupLambdaBA66A573": {
+      "DependsOn": [
+        "CollectorCleanupLambdaServiceRoleDefaultPolicy78205C42",
+        "CollectorCleanupLambdaServiceRoleBC4F8571",
+      ],
+      "Properties": {
+        "Architectures": [
+          "arm64",
+        ],
+        "Code": {
+          "S3Bucket": "cdk-hnb659fds-assets-123456789012-us-west-2",
+          "S3Key": "6dfef27c67e773bb9c014b16afe300ab33f0a14c39ed74273afacda016d37494.zip",
+        },
+        "Environment": {
+          "Variables": {
+            "SCHEDULER_GROUP": "isb-lease-costs-TestStack",
+          },
+        },
+        "FunctionName": "isb-lease-costs-cleanup",
+        "Handler": "index.handler",
+        "Layers": [
+          "arn:aws:lambda:us-west-2:580247275435:layer:LambdaInsightsExtension-Arm64:5",
+        ],
+        "MemorySize": 256,
+        "Role": {
+          "Fn::GetAtt": [
+            "CollectorCleanupLambdaServiceRoleBC4F8571",
+            "Arn",
+          ],
+        },
+        "Runtime": "nodejs22.x",
+        "Timeout": 300,
+        "TracingConfig": {
+          "Mode": "Active",
+        },
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "CollectorCleanupLambdaLogRetention0BF807EE": {
+      "Properties": {
+        "LogGroupName": {
+          "Fn::Join": [
+            "",
+            [
+              "/aws/lambda/",
+              {
+                "Ref": "CollectorCleanupLambdaBA66A573",
+              },
+            ],
+          ],
+        },
+        "RetentionInDays": 30,
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aFD4BFC8A",
+            "Arn",
+          ],
+        },
+      },
+      "Type": "Custom::LogRetention",
+    },
+    "CollectorCleanupLambdaServiceRoleBC4F8571": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/CloudWatchLambdaInsightsExecutionRolePolicy",
+              ],
+            ],
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "CollectorCleanupLambdaServiceRoleDefaultPolicy78205C42": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "xray:PutTraceSegments",
+                "xray:PutTelemetryRecords",
+              ],
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": "scheduler:ListSchedules",
+              "Effect": "Allow",
+              "Resource": "*",
+              "Sid": "ListSchedules",
+            },
+            {
+              "Action": "scheduler:DeleteSchedule",
+              "Effect": "Allow",
+              "Resource": "arn:aws:scheduler:us-west-2:123456789012:schedule/isb-lease-costs-TestStack/lease-costs-*",
+              "Sid": "DeleteStaleSchedules",
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "CollectorCleanupLambdaServiceRoleDefaultPolicy78205C42",
+        "Roles": [
+          {
+            "Ref": "CollectorCleanupLambdaServiceRoleBC4F8571",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "CollectorCleanupScheduleRule9A6ECE37": {
+      "Properties": {
+        "Description": "Trigger daily cleanup of stale lease cost schedules at 2 AM UTC",
+        "Name": "isb-lease-costs-cleanup-daily",
+        "ScheduleExpression": "cron(0 2 * * ? *)",
+        "State": "ENABLED",
+        "Targets": [
+          {
+            "Arn": {
+              "Fn::GetAtt": [
+                "CollectorCleanupLambdaBA66A573",
+                "Arn",
+              ],
+            },
+            "Id": "Target0",
+            "RetryPolicy": {
+              "MaximumRetryAttempts": 2,
+            },
+          },
+        ],
+      },
+      "Type": "AWS::Events::Rule",
+    },
+    "CollectorCleanupScheduleRuleAllowEventRuleTestStackCollectorCleanupLambdaF7796BF392D7119B": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "CollectorCleanupLambdaBA66A573",
+            "Arn",
+          ],
+        },
+        "Principal": "events.amazonaws.com",
+        "SourceArn": {
+          "Fn::GetAtt": [
+            "CollectorCleanupScheduleRule9A6ECE37",
+            "Arn",
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Permission",
+    },
+    "CollectorCostCollectorDlqD57DC26B": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "MessageRetentionPeriod": 1209600,
+        "QueueName": "isb-lease-costs-collector-dlq",
+      },
+      "Type": "AWS::SQS::Queue",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "CollectorCostCollectorLambdaA87A580B": {
+      "DependsOn": [
+        "CollectorCostCollectorLambdaServiceRoleDefaultPolicy218E7727",
+        "CollectorCostCollectorLambdaServiceRole520ED74B",
+      ],
+      "Properties": {
+        "Architectures": [
+          "arm64",
+        ],
+        "Code": {
+          "S3Bucket": "cdk-hnb659fds-assets-123456789012-us-west-2",
+          "S3Key": "41ce7897ff37970c24ddfa1056c551abdabde934698a9a875cfdfe2951dd12f0.zip",
+        },
+        "DeadLetterConfig": {
+          "TargetArn": {
+            "Fn::GetAtt": [
+              "CollectorCostCollectorDlqD57DC26B",
+              "Arn",
+            ],
+          },
+        },
+        "Environment": {
+          "Variables": {
+            "BILLING_PADDING_HOURS": "8",
+            "COST_EXPLORER_ROLE_ARN": "arn:aws:iam::999999999999:role/CostExplorerReadRole",
+            "EVENT_BUS_NAME": "test-event-bus",
+            "ISB_LEASES_LAMBDA_ARN": "arn:aws:lambda:us-west-2:123456789012:function:isb-leases",
+            "PRESIGNED_URL_EXPIRY_DAYS": "7",
+            "S3_BUCKET_NAME": {
+              "Ref": "StorageBucket5CB7C8EA",
+            },
+            "SCHEDULER_GROUP": "isb-lease-costs-TestStack",
+          },
+        },
+        "FunctionName": "isb-lease-costs-collector",
+        "Handler": "index.handler",
+        "Layers": [
+          "arn:aws:lambda:us-west-2:580247275435:layer:LambdaInsightsExtension-Arm64:5",
+        ],
+        "MemorySize": 512,
+        "Role": {
+          "Fn::GetAtt": [
+            "CollectorCostCollectorLambdaServiceRole520ED74B",
+            "Arn",
+          ],
+        },
+        "Runtime": "nodejs22.x",
+        "Timeout": 900,
+        "TracingConfig": {
+          "Mode": "Active",
+        },
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "CollectorCostCollectorLambdaAllowSchedulerInvoke7734B834": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "CollectorCostCollectorLambdaA87A580B",
+            "Arn",
+          ],
+        },
+        "Principal": "scheduler.amazonaws.com",
+        "SourceAccount": "123456789012",
+        "SourceArn": "arn:aws:scheduler:us-west-2:123456789012:schedule/isb-lease-costs-TestStack/*",
+      },
+      "Type": "AWS::Lambda::Permission",
+    },
+    "CollectorCostCollectorLambdaLogRetention1B4C147B": {
+      "Properties": {
+        "LogGroupName": {
+          "Fn::Join": [
+            "",
+            [
+              "/aws/lambda/",
+              {
+                "Ref": "CollectorCostCollectorLambdaA87A580B",
+              },
+            ],
+          ],
+        },
+        "RetentionInDays": 30,
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aFD4BFC8A",
+            "Arn",
+          ],
+        },
+      },
+      "Type": "Custom::LogRetention",
+    },
+    "CollectorCostCollectorLambdaServiceRole520ED74B": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/CloudWatchLambdaInsightsExecutionRolePolicy",
+              ],
+            ],
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "CollectorCostCollectorLambdaServiceRoleDefaultPolicy218E7727": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sqs:SendMessage",
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "CollectorCostCollectorDlqD57DC26B",
+                  "Arn",
+                ],
+              },
+            },
+            {
+              "Action": [
+                "xray:PutTraceSegments",
+                "xray:PutTelemetryRecords",
+              ],
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Resource": "arn:aws:iam::999999999999:role/CostExplorerReadRole",
+              "Sid": "AssumeRoleForCostExplorer",
+            },
+            {
+              "Action": "lambda:InvokeFunction",
+              "Effect": "Allow",
+              "Resource": "arn:aws:lambda:us-west-2:123456789012:function:isb-leases",
+              "Sid": "InvokeIsbLeasesLambda",
+            },
+            {
+              "Action": [
+                "s3:GetObject*",
+                "s3:GetBucket*",
+                "s3:List*",
+                "s3:DeleteObject*",
+                "s3:PutObject",
+                "s3:PutObjectLegalHold",
+                "s3:PutObjectRetention",
+                "s3:PutObjectTagging",
+                "s3:PutObjectVersionTagging",
+                "s3:Abort*",
+              ],
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "StorageBucket5CB7C8EA",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "StorageBucket5CB7C8EA",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+            {
+              "Action": "events:PutEvents",
+              "Effect": "Allow",
+              "Resource": "arn:aws:events:us-west-2:123456789012:event-bus/test-event-bus",
+              "Sid": "PublishEvents",
+            },
+            {
+              "Action": "scheduler:DeleteSchedule",
+              "Effect": "Allow",
+              "Resource": "arn:aws:scheduler:us-west-2:123456789012:schedule/isb-lease-costs-TestStack/lease-costs-*",
+              "Sid": "DeleteOwnSchedule",
+            },
+            {
+              "Action": "cloudwatch:PutMetricData",
+              "Condition": {
+                "StringEquals": {
+                  "cloudwatch:namespace": "ISBLeaseCosts",
+                },
+              },
+              "Effect": "Allow",
+              "Resource": "*",
+              "Sid": "PutCustomMetrics",
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "CollectorCostCollectorLambdaServiceRoleDefaultPolicy218E7727",
+        "Roles": [
+          {
+            "Ref": "CollectorCostCollectorLambdaServiceRole520ED74B",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "CollectorSchedulerExecutionRole634B7645": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "scheduler.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Description": "Role for EventBridge Scheduler to invoke Cost Collector Lambda",
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "CollectorSchedulerExecutionRoleDefaultPolicy91579D4E": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "lambda:InvokeFunction",
+              "Effect": "Allow",
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "CollectorCostCollectorLambdaA87A580B",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "CollectorCostCollectorLambdaA87A580B",
+                          "Arn",
+                        ],
+                      },
+                      ":*",
+                    ],
+                  ],
+                },
+              ],
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "CollectorSchedulerExecutionRoleDefaultPolicy91579D4E",
+        "Roles": [
+          {
+            "Ref": "CollectorSchedulerExecutionRole634B7645",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "CollectorSchedulerLambdaA19AC081": {
+      "DependsOn": [
+        "CollectorSchedulerLambdaServiceRoleDefaultPolicyF9A740E5",
+        "CollectorSchedulerLambdaServiceRole9D285EFD",
+      ],
+      "Properties": {
+        "Architectures": [
+          "arm64",
+        ],
+        "Code": {
+          "S3Bucket": "cdk-hnb659fds-assets-123456789012-us-west-2",
+          "S3Key": "ae8876bea40c8787dc73b260b5c018287a1bf4d1ba8b176152b95cf3c7cc4e75.zip",
+        },
+        "Environment": {
+          "Variables": {
+            "COST_COLLECTOR_LAMBDA_ARN": {
+              "Fn::GetAtt": [
+                "CollectorCostCollectorLambdaA87A580B",
+                "Arn",
+              ],
+            },
+            "DELAY_HOURS": "24",
+            "SCHEDULER_GROUP": "isb-lease-costs-TestStack",
+            "SCHEDULER_ROLE_ARN": {
+              "Fn::GetAtt": [
+                "CollectorSchedulerExecutionRole634B7645",
+                "Arn",
+              ],
+            },
+          },
+        },
+        "FunctionName": "isb-lease-costs-scheduler",
+        "Handler": "index.handler",
+        "Layers": [
+          "arn:aws:lambda:us-west-2:580247275435:layer:LambdaInsightsExtension-Arm64:5",
+        ],
+        "MemorySize": 256,
+        "Role": {
+          "Fn::GetAtt": [
+            "CollectorSchedulerLambdaServiceRole9D285EFD",
+            "Arn",
+          ],
+        },
+        "Runtime": "nodejs22.x",
+        "Timeout": 15,
+        "TracingConfig": {
+          "Mode": "Active",
+        },
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "CollectorSchedulerLambdaLogRetention36D2DFFE": {
+      "Properties": {
+        "LogGroupName": {
+          "Fn::Join": [
+            "",
+            [
+              "/aws/lambda/",
+              {
+                "Ref": "CollectorSchedulerLambdaA19AC081",
+              },
+            ],
+          ],
+        },
+        "RetentionInDays": 30,
+        "ServiceToken": {
+          "Fn::GetAtt": [
+            "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aFD4BFC8A",
+            "Arn",
+          ],
+        },
+      },
+      "Type": "Custom::LogRetention",
+    },
+    "CollectorSchedulerLambdaServiceRole9D285EFD": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/CloudWatchLambdaInsightsExecutionRolePolicy",
+              ],
+            ],
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "CollectorSchedulerLambdaServiceRoleDefaultPolicyF9A740E5": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "xray:PutTraceSegments",
+                "xray:PutTelemetryRecords",
+              ],
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+            {
+              "Action": "scheduler:CreateSchedule",
+              "Effect": "Allow",
+              "Resource": "arn:aws:scheduler:us-west-2:123456789012:schedule/isb-lease-costs-TestStack/*",
+              "Sid": "CreateSchedule",
+            },
+            {
+              "Action": "iam:PassRole",
+              "Condition": {
+                "StringEquals": {
+                  "iam:PassedToService": "scheduler.amazonaws.com",
+                },
+              },
+              "Effect": "Allow",
+              "Resource": {
+                "Fn::GetAtt": [
+                  "CollectorSchedulerExecutionRole634B7645",
+                  "Arn",
+                ],
+              },
+              "Sid": "PassRoleToScheduler",
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "CollectorSchedulerLambdaServiceRoleDefaultPolicyF9A740E5",
+        "Roles": [
+          {
+            "Ref": "CollectorSchedulerLambdaServiceRole9D285EFD",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "EventRuleDlq84CB8C02": {
+      "DeletionPolicy": "Delete",
+      "Properties": {
+        "MessageRetentionPeriod": 1209600,
+        "QueueName": "isb-lease-costs-rule-dlq",
+      },
+      "Type": "AWS::SQS::Queue",
+      "UpdateReplacePolicy": "Delete",
+    },
+    "EventRuleDlqPolicy0A233882": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sqs:SendMessage",
+              "Condition": {
+                "ArnEquals": {
+                  "aws:SourceArn": {
+                    "Fn::GetAtt": [
+                      "LeaseTerminatedRuleC4A781EC",
+                      "Arn",
+                    ],
+                  },
+                },
+              },
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "events.amazonaws.com",
+              },
+              "Resource": {
+                "Fn::GetAtt": [
+                  "EventRuleDlq84CB8C02",
+                  "Arn",
+                ],
+              },
+              "Sid": "AllowEventRuleTestStackLeaseTerminatedRuleE6957480",
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "Queues": [
+          {
+            "Ref": "EventRuleDlq84CB8C02",
+          },
+        ],
+      },
+      "Type": "AWS::SQS::QueuePolicy",
+    },
+    "LeaseTerminatedRuleAllowEventRuleTestStackCollectorSchedulerLambdaA3E7F21145C52845": {
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "CollectorSchedulerLambdaA19AC081",
+            "Arn",
+          ],
+        },
+        "Principal": "events.amazonaws.com",
+        "SourceArn": {
+          "Fn::GetAtt": [
+            "LeaseTerminatedRuleC4A781EC",
+            "Arn",
+          ],
+        },
+      },
+      "Type": "AWS::Lambda::Permission",
+    },
+    "LeaseTerminatedRuleC4A781EC": {
+      "Properties": {
+        "Description": "Triggers lease cost collection when a lease terminates",
+        "EventBusName": "test-event-bus",
+        "EventPattern": {
+          "detail-type": [
+            "LeaseTerminated",
+          ],
+          "source": [
+            "isb",
+          ],
+        },
+        "Name": "isb-lease-costs-trigger",
+        "State": "ENABLED",
+        "Targets": [
+          {
+            "Arn": {
+              "Fn::GetAtt": [
+                "CollectorSchedulerLambdaA19AC081",
+                "Arn",
+              ],
+            },
+            "DeadLetterConfig": {
+              "Arn": {
+                "Fn::GetAtt": [
+                  "EventRuleDlq84CB8C02",
+                  "Arn",
+                ],
+              },
+            },
+            "Id": "Target0",
+            "RetryPolicy": {
+              "MaximumRetryAttempts": 3,
+            },
+          },
+        ],
+      },
+      "Type": "AWS::Events::Rule",
+    },
+    "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aFD4BFC8A": {
+      "DependsOn": [
+        "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRoleDefaultPolicyADDA7DEB",
+        "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRole9741ECFB",
+      ],
+      "Properties": {
+        "Code": {
+          "S3Bucket": "cdk-hnb659fds-assets-123456789012-us-west-2",
+          "S3Key": "2819175352ad1ce0dae768e83fc328fb70fb5f10b4a8ff0ccbcb791f02b0716d.zip",
+        },
+        "Handler": "index.handler",
+        "Role": {
+          "Fn::GetAtt": [
+            "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRole9741ECFB",
+            "Arn",
+          ],
+        },
+        "Runtime": "nodejs22.x",
+        "Timeout": 900,
+      },
+      "Type": "AWS::Lambda::Function",
+    },
+    "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRole9741ECFB": {
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Statement": [
+            {
+              "Action": "sts:AssumeRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com",
+              },
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "ManagedPolicyArns": [
+          {
+            "Fn::Join": [
+              "",
+              [
+                "arn:",
+                {
+                  "Ref": "AWS::Partition",
+                },
+                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+              ],
+            ],
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Role",
+    },
+    "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRoleDefaultPolicyADDA7DEB": {
+      "Properties": {
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": [
+                "logs:PutRetentionPolicy",
+                "logs:DeleteRetentionPolicy",
+              ],
+              "Effect": "Allow",
+              "Resource": "*",
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+        "PolicyName": "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRoleDefaultPolicyADDA7DEB",
+        "Roles": [
+          {
+            "Ref": "LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8aServiceRole9741ECFB",
+          },
+        ],
+      },
+      "Type": "AWS::IAM::Policy",
+    },
+    "ObservabilityAlertTopic4533A39D": {
+      "Properties": {
+        "DisplayName": "ISB Lease Costs Alerts",
+      },
+      "Type": "AWS::SNS::Topic",
+    },
+    "ObservabilityAlertTopicalertsexamplecom7580CE59": {
+      "Properties": {
+        "Endpoint": "alerts@example.com",
+        "Protocol": "email",
+        "TopicArn": {
+          "Ref": "ObservabilityAlertTopic4533A39D",
+        },
+      },
+      "Type": "AWS::SNS::Subscription",
+    },
+    "ObservabilityCollectorDlqAlarm74773D31": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Ref": "ObservabilityAlertTopic4533A39D",
+          },
+        ],
+        "AlarmDescription": "Cost Collector Lambda failures detected in DLQ",
+        "AlarmName": "isb-lease-costs-collector-dlq",
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "Dimensions": [
+          {
+            "Name": "QueueName",
+            "Value": {
+              "Fn::GetAtt": [
+                "CollectorCostCollectorDlqD57DC26B",
+                "QueueName",
+              ],
+            },
+          },
+        ],
+        "EvaluationPeriods": 1,
+        "MetricName": "ApproximateNumberOfMessagesVisible",
+        "Namespace": "AWS/SQS",
+        "Period": 300,
+        "Statistic": "Maximum",
+        "Threshold": 1,
+        "TreatMissingData": "notBreaching",
+      },
+      "Type": "AWS::CloudWatch::Alarm",
+    },
+    "ObservabilityCollectorDurationAlarm2C216894": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Ref": "ObservabilityAlertTopic4533A39D",
+          },
+        ],
+        "AlarmDescription": "Cost Collector Lambda duration approaching timeout (12 min threshold for 15 min timeout)",
+        "AlarmName": "isb-lease-costs-collector-duration",
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "Dimensions": [
+          {
+            "Name": "FunctionName",
+            "Value": {
+              "Ref": "CollectorCostCollectorLambdaA87A580B",
+            },
+          },
+        ],
+        "EvaluationPeriods": 1,
+        "MetricName": "Duration",
+        "Namespace": "AWS/Lambda",
+        "Period": 300,
+        "Statistic": "Maximum",
+        "Threshold": 720000,
+        "TreatMissingData": "notBreaching",
+      },
+      "Type": "AWS::CloudWatch::Alarm",
+    },
+    "ObservabilityCollectorErrorsAlarm46C890F9": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Ref": "ObservabilityAlertTopic4533A39D",
+          },
+        ],
+        "AlarmDescription": "Cost Collector Lambda errors exceed threshold",
+        "AlarmName": "isb-lease-costs-collector-errors",
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "Dimensions": [
+          {
+            "Name": "FunctionName",
+            "Value": {
+              "Ref": "CollectorCostCollectorLambdaA87A580B",
+            },
+          },
+        ],
+        "EvaluationPeriods": 1,
+        "MetricName": "Errors",
+        "Namespace": "AWS/Lambda",
+        "Period": 300,
+        "Statistic": "Sum",
+        "Threshold": 3,
+        "TreatMissingData": "notBreaching",
+      },
+      "Type": "AWS::CloudWatch::Alarm",
+    },
+    "ObservabilityRuleDlqAlarmC94F88AF": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Ref": "ObservabilityAlertTopic4533A39D",
+          },
+        ],
+        "AlarmDescription": "EventBridge Rule delivery failures detected in DLQ",
+        "AlarmName": "isb-lease-costs-rule-dlq",
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "Dimensions": [
+          {
+            "Name": "QueueName",
+            "Value": {
+              "Fn::GetAtt": [
+                "EventRuleDlq84CB8C02",
+                "QueueName",
+              ],
+            },
+          },
+        ],
+        "EvaluationPeriods": 1,
+        "MetricName": "ApproximateNumberOfMessagesVisible",
+        "Namespace": "AWS/SQS",
+        "Period": 300,
+        "Statistic": "Maximum",
+        "Threshold": 1,
+        "TreatMissingData": "notBreaching",
+      },
+      "Type": "AWS::CloudWatch::Alarm",
+    },
+    "ObservabilitySchedulerErrorsAlarm53159D27": {
+      "Properties": {
+        "AlarmActions": [
+          {
+            "Ref": "ObservabilityAlertTopic4533A39D",
+          },
+        ],
+        "AlarmDescription": "Scheduler Lambda errors exceed threshold",
+        "AlarmName": "isb-lease-costs-scheduler-errors",
+        "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+        "Dimensions": [
+          {
+            "Name": "FunctionName",
+            "Value": {
+              "Ref": "CollectorSchedulerLambdaA19AC081",
+            },
+          },
+        ],
+        "EvaluationPeriods": 1,
+        "MetricName": "Errors",
+        "Namespace": "AWS/Lambda",
+        "Period": 300,
+        "Statistic": "Sum",
+        "Threshold": 3,
+        "TreatMissingData": "notBreaching",
+      },
+      "Type": "AWS::CloudWatch::Alarm",
+    },
+    "SchedulerGroup": {
+      "Properties": {
+        "Name": "isb-lease-costs-TestStack",
+      },
+      "Type": "AWS::Scheduler::ScheduleGroup",
+    },
+    "StorageBucket5CB7C8EA": {
+      "DeletionPolicy": "Retain",
+      "Properties": {
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256",
+              },
+            },
+          ],
+        },
+        "BucketName": "isb-lease-costs-123456789012-us-west-2",
+        "LifecycleConfiguration": {
+          "Rules": [
+            {
+              "ExpirationInDays": 1095,
+              "Status": "Enabled",
+            },
+          ],
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true,
+        },
+      },
+      "Type": "AWS::S3::Bucket",
+      "UpdateReplacePolicy": "Retain",
+    },
+    "StorageBucketPolicy49CFBD91": {
+      "Properties": {
+        "Bucket": {
+          "Ref": "StorageBucket5CB7C8EA",
+        },
+        "PolicyDocument": {
+          "Statement": [
+            {
+              "Action": "s3:*",
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false",
+                },
+              },
+              "Effect": "Deny",
+              "Principal": {
+                "AWS": "*",
+              },
+              "Resource": [
+                {
+                  "Fn::GetAtt": [
+                    "StorageBucket5CB7C8EA",
+                    "Arn",
+                  ],
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      {
+                        "Fn::GetAtt": [
+                          "StorageBucket5CB7C8EA",
+                          "Arn",
+                        ],
+                      },
+                      "/*",
+                    ],
+                  ],
+                },
+              ],
+            },
+          ],
+          "Version": "2012-10-17",
+        },
+      },
+      "Type": "AWS::S3::BucketPolicy",
+    },
+  },
+  "Rules": {
+    "CheckBootstrapVersion": {
+      "Assertions": [
+        {
+          "Assert": {
+            "Fn::Not": [
+              {
+                "Fn::Contains": [
+                  [
+                    "1",
+                    "2",
+                    "3",
+                    "4",
+                    "5",
+                  ],
+                  {
+                    "Ref": "BootstrapVersion",
+                  },
+                ],
+              },
+            ],
+          },
+          "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI.",
+        },
+      ],
+    },
+  },
+}
+`;
