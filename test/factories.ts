@@ -118,7 +118,7 @@ export function buildLeaseTerminatedEvent(
     },
   };
 
-  return deepMerge(defaults, overrides);
+  return deepMerge(defaults, overrides) as EventBridgeEvent<"LeaseTerminated", LeaseTerminatedEvent["detail"]>;
 }
 
 /**
@@ -574,6 +574,7 @@ export function buildLeaseLifecycle(
       detail: {
         leaseId: { uuid: leaseId, userEmail },
         accountId,
+        reason: { type: "Expired" },
       },
     }),
     payload: buildSchedulerPayload({
