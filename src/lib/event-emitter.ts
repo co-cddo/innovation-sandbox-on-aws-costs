@@ -20,6 +20,7 @@ import { getEventBridgeClient } from "./aws-clients.js";
  * @param eventBusName - Name of the EventBridge bus to publish to
  * @param detail - Event detail payload containing lease cost information
  * @param detail.leaseId - Unique lease identifier (use for deduplication)
+ * @param detail.userEmail - User email address for notification delivery
  * @param detail.accountId - AWS account ID
  * @param detail.totalCost - Total cost in dollars
  * @param detail.csvUrl - Presigned S3 URL for CSV download
@@ -35,6 +36,7 @@ import { getEventBridgeClient } from "./aws-clients.js";
  *   "isb-events",
  *   {
  *     leaseId: "550e8400-e29b-41d4-a716-446655440000",
+ *     userEmail: "user@example.com",
  *     accountId: "123456789012",
  *     totalCost: 45.67,
  *     csvUrl: "https://s3.amazonaws.com/...",

@@ -766,6 +766,7 @@ describe("LeaseCostsGeneratedDetailSchema", () => {
     it("should validate a complete LeaseCostsGenerated detail", () => {
       const validDetail = {
         leaseId: "550e8400-e29b-41d4-a716-446655440000",
+        userEmail: "user@example.com",
         accountId: "123456789012",
         totalCost: 125.45,
         currency: "USD",
@@ -779,6 +780,7 @@ describe("LeaseCostsGeneratedDetailSchema", () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.leaseId).toBe("550e8400-e29b-41d4-a716-446655440000");
+        expect(result.data.userEmail).toBe("user@example.com");
         expect(result.data.totalCost).toBe(125.45);
         expect(result.data.currency).toBe("USD");
       }
@@ -787,6 +789,7 @@ describe("LeaseCostsGeneratedDetailSchema", () => {
     it("should accept zero total cost", () => {
       const detail = {
         leaseId: "550e8400-e29b-41d4-a716-446655440000",
+        userEmail: "user@example.com",
         accountId: "123456789012",
         totalCost: 0,
         currency: "USD",
@@ -803,6 +806,7 @@ describe("LeaseCostsGeneratedDetailSchema", () => {
     it("should accept very small costs (penny precision)", () => {
       const detail = {
         leaseId: "550e8400-e29b-41d4-a716-446655440000",
+        userEmail: "user@example.com",
         accountId: "123456789012",
         totalCost: 0.01,
         currency: "USD",
@@ -819,6 +823,7 @@ describe("LeaseCostsGeneratedDetailSchema", () => {
     it("should accept large costs", () => {
       const detail = {
         leaseId: "550e8400-e29b-41d4-a716-446655440000",
+        userEmail: "user@example.com",
         accountId: "123456789012",
         totalCost: 9999.99,
         currency: "USD",
@@ -842,6 +847,7 @@ describe("LeaseCostsGeneratedDetailSchema", () => {
       urls.forEach((csvUrl) => {
         const detail = {
           leaseId: "550e8400-e29b-41d4-a716-446655440000",
+          userEmail: "user@example.com",
           accountId: "123456789012",
           totalCost: 125.45,
           currency: "USD",
@@ -855,12 +861,69 @@ describe("LeaseCostsGeneratedDetailSchema", () => {
         expect(result.success).toBe(true);
       });
     });
+
+    it("should accept various valid email formats", () => {
+      const validEmails = [
+        "user@example.com",
+        "user.name@example.com",
+        "user+tag@example.co.uk",
+        "user_name@example.com",
+        "user-name@example-domain.com",
+        "123@example.com",
+        "a@b.co",
+        // Edge cases for character distribution
+        "verylonglocal" + "x".repeat(50) + "@example.com", // Long local part
+        "user@" + "subdomain.".repeat(10) + "example.com", // Long domain
+        "a.b.c.d.e@x.y.z.com", // Multiple dots
+        "user+tag1+tag2+tag3@example.com", // Multiple plus signs
+      ];
+
+      validEmails.forEach((userEmail) => {
+        const detail = {
+          leaseId: "550e8400-e29b-41d4-a716-446655440000",
+          userEmail,
+          accountId: "123456789012",
+          totalCost: 125.45,
+          currency: "USD",
+          startDate: "2026-01-15",
+          endDate: "2026-02-03",
+          csvUrl: "https://s3.amazonaws.com/bucket/550e8400.csv",
+          urlExpiresAt: "2026-02-10T10:00:00Z",
+        };
+
+        const result = LeaseCostsGeneratedDetailSchema.safeParse(detail);
+        expect(result.success).toBe(true);
+      });
+    });
   });
 
   describe("backward compatibility", () => {
+    it("should REJECT events without userEmail (breaking change - no existing consumers)", () => {
+      // This is a BREAKING CHANGE: userEmail is now required
+      // Safe because no consumers exist yet (confirmed in tech spec)
+      const detailWithoutUserEmail = {
+        leaseId: "550e8400-e29b-41d4-a716-446655440000",
+        // userEmail: missing - this should FAIL
+        accountId: "123456789012",
+        totalCost: 125.45,
+        currency: "USD",
+        startDate: "2026-01-15",
+        endDate: "2026-02-03",
+        csvUrl: "https://s3.amazonaws.com/bucket/550e8400.csv",
+        urlExpiresAt: "2026-02-10T10:00:00Z",
+      };
+
+      const result = LeaseCostsGeneratedDetailSchema.safeParse(detailWithoutUserEmail);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues[0].path).toContain("userEmail");
+      }
+    });
+
     it("should accept events with extra unknown fields (Zod strips them)", () => {
       const detailWithExtraFields = {
         leaseId: "550e8400-e29b-41d4-a716-446655440000",
+        userEmail: "user@example.com",
         accountId: "123456789012",
         totalCost: 125.45,
         currency: "USD",
@@ -911,6 +974,7 @@ describe("LeaseCostsGeneratedDetailSchema", () => {
   describe("required fields enforcement", () => {
     const requiredFields = [
       "leaseId",
+      "userEmail",
       "accountId",
       "totalCost",
       "currency",
@@ -924,6 +988,7 @@ describe("LeaseCostsGeneratedDetailSchema", () => {
       it(`should reject detail without ${field}`, () => {
         const completeDetail = {
           leaseId: "550e8400-e29b-41d4-a716-446655440000",
+          userEmail: "user@example.com",
           accountId: "123456789012",
           totalCost: 125.45,
           currency: "USD",
@@ -950,6 +1015,7 @@ describe("LeaseCostsGeneratedDetailSchema", () => {
     it("should reject invalid UUID format", () => {
       const detail = {
         leaseId: "not-a-uuid",
+        userEmail: "user@example.com",
         accountId: "123456789012",
         totalCost: 125.45,
         currency: "USD",
@@ -969,6 +1035,7 @@ describe("LeaseCostsGeneratedDetailSchema", () => {
     it("should reject invalid account ID format", () => {
       const detail = {
         leaseId: "550e8400-e29b-41d4-a716-446655440000",
+        userEmail: "user@example.com",
         accountId: "invalid",
         totalCost: 125.45,
         currency: "USD",
@@ -988,6 +1055,7 @@ describe("LeaseCostsGeneratedDetailSchema", () => {
     it("should reject negative total cost", () => {
       const detail = {
         leaseId: "550e8400-e29b-41d4-a716-446655440000",
+        userEmail: "user@example.com",
         accountId: "123456789012",
         totalCost: -10.5, // Negative cost
         currency: "USD",
@@ -1007,6 +1075,7 @@ describe("LeaseCostsGeneratedDetailSchema", () => {
     it("should reject non-USD currency", () => {
       const detail = {
         leaseId: "550e8400-e29b-41d4-a716-446655440000",
+        userEmail: "user@example.com",
         accountId: "123456789012",
         totalCost: 125.45,
         currency: "GBP", // Wrong currency
@@ -1034,6 +1103,7 @@ describe("LeaseCostsGeneratedDetailSchema", () => {
       invalidDates.forEach((startDate) => {
         const detail = {
           leaseId: "550e8400-e29b-41d4-a716-446655440000",
+          userEmail: "user@example.com",
           accountId: "123456789012",
           totalCost: 125.45,
           currency: "USD",
@@ -1054,6 +1124,7 @@ describe("LeaseCostsGeneratedDetailSchema", () => {
     it("should reject invalid date format for endDate", () => {
       const detail = {
         leaseId: "550e8400-e29b-41d4-a716-446655440000",
+        userEmail: "user@example.com",
         accountId: "123456789012",
         totalCost: 125.45,
         currency: "USD",
@@ -1073,6 +1144,7 @@ describe("LeaseCostsGeneratedDetailSchema", () => {
     it("should reject invalid URL format", () => {
       const detail = {
         leaseId: "550e8400-e29b-41d4-a716-446655440000",
+        userEmail: "user@example.com",
         accountId: "123456789012",
         totalCost: 125.45,
         currency: "USD",
@@ -1092,6 +1164,7 @@ describe("LeaseCostsGeneratedDetailSchema", () => {
     it("should reject invalid ISO 8601 timestamp for urlExpiresAt", () => {
       const detail = {
         leaseId: "550e8400-e29b-41d4-a716-446655440000",
+        userEmail: "user@example.com",
         accountId: "123456789012",
         totalCost: 125.45,
         currency: "USD",
@@ -1106,6 +1179,107 @@ describe("LeaseCostsGeneratedDetailSchema", () => {
       if (!result.success) {
         expect(result.error.issues[0].path).toContain("urlExpiresAt");
       }
+    });
+
+    it("should reject invalid email format", () => {
+      const invalidEmails = [
+        "not-an-email",
+        "user@",
+        "@example.com",
+        "user @example.com",
+        "user@.com",
+        "", // Empty string
+        "   ", // Whitespace only
+      ];
+
+      invalidEmails.forEach((userEmail) => {
+        const detail = {
+          leaseId: "550e8400-e29b-41d4-a716-446655440000",
+          userEmail,
+          accountId: "123456789012",
+          totalCost: 125.45,
+          currency: "USD",
+          startDate: "2026-01-15",
+          endDate: "2026-02-03",
+          csvUrl: "https://s3.amazonaws.com/bucket/550e8400.csv",
+          urlExpiresAt: "2026-02-10T10:00:00Z",
+        };
+
+        const result = LeaseCostsGeneratedDetailSchema.safeParse(detail);
+        expect(result.success).toBe(false);
+        if (!result.success) {
+          expect(result.error.issues[0].path).toContain("userEmail");
+        }
+      });
+    });
+
+    it("should reject email with ANSI escape codes (log injection prevention)", () => {
+      const maliciousEmails = [
+        "\x1B[31mtest@example.com", // Red text
+        "test\x1B[0m@example.com", // Reset code
+        "test@\x1B[1mexample.com", // Bold
+        "test\x00@example.com", // Null byte
+        "test@example.com\x1B[2J", // Clear screen
+      ];
+
+      maliciousEmails.forEach((userEmail) => {
+        const detail = {
+          leaseId: "550e8400-e29b-41d4-a716-446655440000",
+          userEmail,
+          accountId: "123456789012",
+          totalCost: 125.45,
+          currency: "USD",
+          startDate: "2026-01-15",
+          endDate: "2026-02-03",
+          csvUrl: "https://s3.amazonaws.com/bucket/550e8400.csv",
+          urlExpiresAt: "2026-02-10T10:00:00Z",
+        };
+
+        const result = LeaseCostsGeneratedDetailSchema.safeParse(detail);
+        expect(result.success).toBe(false);
+        if (!result.success) {
+          // Validation should fail - check for ANSI escape message or generic validation error
+          const hasSecurityError = result.error.issues.some((issue) =>
+            issue.message.includes("ANSI escape") || issue.path.includes("userEmail")
+          );
+          expect(hasSecurityError).toBe(true);
+        }
+      });
+    });
+
+    it("should reject email with non-ASCII characters (homograph attack prevention)", () => {
+      const maliciousEmails = [
+        "tеst@example.com", // Cyrillic 'е' instead of Latin 'e'
+        "τest@example.com", // Greek tau (τ) looks like 't'
+        "tеst@еxample.com", // Multiple Cyrillic characters
+        "test@example.com\u200B", // Zero-width space
+        "te\u200Cst@example.com", // Zero-width non-joiner
+        "test😀@example.com", // Emoji
+        "tשst@example.com", // Hebrew character
+        "tعst@example.com", // Arabic character
+      ];
+
+      maliciousEmails.forEach((userEmail) => {
+        const detail = {
+          leaseId: "550e8400-e29b-41d4-a716-446655440000",
+          userEmail,
+          accountId: "123456789012",
+          totalCost: 125.45,
+          currency: "USD",
+          startDate: "2026-01-15",
+          endDate: "2026-02-03",
+          csvUrl: "https://s3.amazonaws.com/bucket/550e8400.csv",
+          urlExpiresAt: "2026-02-10T10:00:00Z",
+        };
+
+        const result = LeaseCostsGeneratedDetailSchema.safeParse(detail);
+        expect(result.success).toBe(false);
+        if (!result.success) {
+          expect(result.error.issues.some((issue) =>
+            issue.message.includes("non-ASCII")
+          )).toBe(true);
+        }
+      });
     });
   });
 
@@ -1138,6 +1312,7 @@ describe("LeaseCostsGeneratedDetailSchema", () => {
     it("documents that leaseId is used for deduplication", () => {
       const event1 = {
         leaseId: "550e8400-e29b-41d4-a716-446655440000",
+        userEmail: "user@example.com",
         accountId: "123456789012",
         totalCost: 125.45,
         currency: "USD",
@@ -1163,6 +1338,53 @@ describe("LeaseCostsGeneratedDetailSchema", () => {
       if (result1.success && result2.success) {
         expect(result1.data.leaseId).toBe(result2.data.leaseId);
       }
+    });
+  });
+
+  describe("DoS Protection - Input Size Limits", () => {
+    it("should reject email longer than 254 characters (RFC 5321 limit)", () => {
+      // Create email with 255 characters (exceeds RFC 5321 limit)
+      // "@example.com" = 12 characters, so we need 243 'a' chars to get 255 total
+      const longEmail = "a".repeat(243) + "@example.com"; // 243 + 12 = 255 chars
+
+      const detail = {
+        leaseId: "550e8400-e29b-41d4-a716-446655440000",
+        userEmail: longEmail,
+        accountId: "123456789012",
+        totalCost: 125.45,
+        currency: "USD",
+        startDate: "2026-01-15",
+        endDate: "2026-02-03",
+        csvUrl: "https://s3.amazonaws.com/bucket/550e8400.csv",
+        urlExpiresAt: "2026-02-10T10:00:00Z",
+      };
+
+      const result = LeaseCostsGeneratedDetailSchema.safeParse(detail);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues[0].message).toContain("254 characters");
+      }
+    });
+
+    it("should accept email at 254 character limit", () => {
+      // Create email with exactly 254 characters
+      // "@example.com" = 12 characters, so we need 242 'a' chars to get 254 total
+      const maxEmail = "a".repeat(242) + "@example.com"; // 242 + 12 = 254 chars
+
+      const detail = {
+        leaseId: "550e8400-e29b-41d4-a716-446655440000",
+        userEmail: maxEmail,
+        accountId: "123456789012",
+        totalCost: 125.45,
+        currency: "USD",
+        startDate: "2026-01-15",
+        endDate: "2026-02-03",
+        csvUrl: "https://s3.amazonaws.com/bucket/550e8400.csv",
+        urlExpiresAt: "2026-02-10T10:00:00Z",
+      };
+
+      const result = LeaseCostsGeneratedDetailSchema.safeParse(detail);
+      expect(result.success).toBe(true);
     });
   });
 });
@@ -1752,6 +1974,7 @@ describe("Schema Evolution Strategy", () => {
 
         const detail = {
           leaseId: "550e8400-e29b-41d4-a716-446655440000",
+          userEmail: "user@example.com",
           accountId: "123456789012",
           totalCost: 100.5,
           currency: "USD" as const,
@@ -1774,6 +1997,7 @@ describe("Schema Evolution Strategy", () => {
 
         const detail = {
           leaseId: "550e8400-e29b-41d4-a716-446655440000",
+          userEmail: "user@example.com",
           accountId: "123456789012",
           totalCost: 100.5,
           currency: "USD" as const,
@@ -1792,6 +2016,7 @@ describe("Schema Evolution Strategy", () => {
       it("should reject date string longer than 10 characters", () => {
         const detail = {
           leaseId: "550e8400-e29b-41d4-a716-446655440000",
+          userEmail: "user@example.com",
           accountId: "123456789012",
           totalCost: 100.5,
           currency: "USD" as const,
@@ -1811,6 +2036,7 @@ describe("Schema Evolution Strategy", () => {
       it("should accept valid YYYY-MM-DD date (10 characters)", () => {
         const detail = {
           leaseId: "550e8400-e29b-41d4-a716-446655440000",
+          userEmail: "user@example.com",
           accountId: "123456789012",
           totalCost: 100.5,
           currency: "USD" as const,

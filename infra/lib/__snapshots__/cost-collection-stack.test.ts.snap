@@ -74,7 +74,7 @@ exports[`CostCollectionStack > should match snapshot 1`] = `
         ],
         "Code": {
           "S3Bucket": "cdk-hnb659fds-assets-123456789012-us-west-2",
-          "S3Key": "1b6923eacc14069f4b38da3f4f27a1b3cbc05981449318b5d38e81df5fd9f0c9.zip",
+          "S3Key": "6dfef27c67e773bb9c014b16afe300ab33f0a14c39ed74273afacda016d37494.zip",
         },
         "Environment": {
           "Variables": {
@@ -265,7 +265,7 @@ exports[`CostCollectionStack > should match snapshot 1`] = `
         ],
         "Code": {
           "S3Bucket": "cdk-hnb659fds-assets-123456789012-us-west-2",
-          "S3Key": "7822ad0d0caf8bfa396cf123fa8956eaaa50f87162e78bfc5a6bec644dcad14d.zip",
+          "S3Key": "41ce7897ff37970c24ddfa1056c551abdabde934698a9a875cfdfe2951dd12f0.zip",
         },
         "DeadLetterConfig": {
           "TargetArn": {
@@ -566,7 +566,7 @@ exports[`CostCollectionStack > should match snapshot 1`] = `
         ],
         "Code": {
           "S3Bucket": "cdk-hnb659fds-assets-123456789012-us-west-2",
-          "S3Key": "ce55998de49d382a29b7361faa58d46f34d56550c465d99be3d6608b14364ed2.zip",
+          "S3Key": "ae8876bea40c8787dc73b260b5c018287a1bf4d1ba8b176152b95cf3c7cc4e75.zip",
         },
         "Environment": {
           "Variables": {

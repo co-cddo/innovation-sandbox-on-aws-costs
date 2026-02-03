@@ -182,6 +182,7 @@ export function buildLeaseCostsGeneratedDetail(
 ): LeaseCostsGeneratedDetail {
   const defaults: LeaseCostsGeneratedDetail = {
     leaseId: "550e8400-e29b-41d4-a716-446655440000",
+    userEmail: "user@example.com",
     accountId: "123456789012",
     totalCost: 150.0,
     currency: "USD",
@@ -591,6 +592,7 @@ export function buildLeaseLifecycle(
     }),
     eventDetail: buildLeaseCostsGeneratedDetail({
       leaseId,
+      userEmail,
       accountId,
       totalCost,
       startDate: leaseStartDate.split("T")[0],

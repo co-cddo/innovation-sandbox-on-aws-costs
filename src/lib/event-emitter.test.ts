@@ -19,6 +19,7 @@ describe("emitLeaseCostsGenerated", () => {
 
   const validDetail: LeaseCostsGeneratedDetail = {
     leaseId: "550e8400-e29b-41d4-a716-446655440000",
+    userEmail: "user@example.com",
     accountId: "123456789012",
     totalCost: 150.5,
     currency: "USD",

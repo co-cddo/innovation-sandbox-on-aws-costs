@@ -474,6 +474,7 @@ export const SchedulerPayloadSchema = z.object({
  */
 export const LeaseCostsGeneratedDetailSchema = z.object({
   leaseId: uuidV4Schema(), // PRIMARY KEY: Use for deduplication in consumers
+  userEmail: strictEmailSchema(), // Recipient email for notification delivery
   accountId: z
     .string()
     .max(12, "AWS Account ID must be exactly 12 digits")

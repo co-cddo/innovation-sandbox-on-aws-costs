@@ -314,6 +314,7 @@ export async function handler(event: unknown): Promise<void> {
   // 8. Emit LeaseCostsGenerated event
   const eventDetail = {
     leaseId,
+    userEmail,
     accountId,
     totalCost: costReport.totalCost,
     currency: "USD" as const,
