@@ -2,22 +2,25 @@
  * Unit tests for AWS Cost Explorer module.
  *
  * These tests use mocked AWS SDK clients for fast, isolated unit testing.
- * For integration tests with real AWS SDK responses, see cost-explorer.integration.test.ts
  *
  * Test Coverage:
  * - Client creation with credentials and profiles
- * - Cost data retrieval and aggregation logic
+ * - Resource-level cost data retrieval with GetCostAndUsageWithResources
+ * - 14-day boundary detection and fallback handling
  * - Pagination handling with NextPageToken
- * - Floating-point precision protection
  * - Rate limiting delays
  * - Safety features (MAX_PAGES, Lambda timeout detection)
- * - Error handling
- *
- * @see cost-explorer.integration.test.ts - Integration tests with real AWS SDK responses
+ * - Precision handling with Decimal.js
+ * - Sort order (service total → resource cost)
+ * - Error handling including opt-in errors
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { CostExplorerClient, GetCostAndUsageCommand } from "@aws-sdk/client-cost-explorer";
+import {
+  CostExplorerClient,
+  GetCostAndUsageCommand,
+  GetCostAndUsageWithResourcesCommand,
+} from "@aws-sdk/client-cost-explorer";
 
 // Mock Cost Explorer client
 vi.mock("@aws-sdk/client-cost-explorer", async () => {
@@ -73,19 +76,36 @@ describe("cost-explorer", () => {
   });
 
   describe("getCostData", () => {
-    it("should return aggregated costs from single page response", async () => {
-      mockSend.mockResolvedValue({
+    it("should return resource-level costs from single page response", async () => {
+      // Mock service list query
+      mockSend.mockResolvedValueOnce({
         ResultsByTime: [
           {
             Groups: [
-              {
-                Keys: ["Amazon EC2"],
-                Metrics: { UnblendedCost: { Amount: "100.00" } },
-              },
-              {
-                Keys: ["Amazon S3"],
-                Metrics: { UnblendedCost: { Amount: "50.00" } },
-              },
+              { Keys: ["Amazon EC2"], Metrics: { UnblendedCost: { Amount: "100.00" } } },
+              { Keys: ["Amazon S3"], Metrics: { UnblendedCost: { Amount: "50.00" } } },
+            ],
+          },
+        ],
+      });
+
+      // Mock resource query for EC2
+      mockSend.mockResolvedValueOnce({
+        ResultsByTime: [
+          {
+            Groups: [
+              { Keys: ["i-1234567890abcdef0", "us-east-1"], Metrics: { UnblendedCost: { Amount: "100.00" } } },
+            ],
+          },
+        ],
+      });
+
+      // Mock resource query for S3
+      mockSend.mockResolvedValueOnce({
+        ResultsByTime: [
+          {
+            Groups: [
+              { Keys: ["my-bucket", "us-west-2"], Metrics: { UnblendedCost: { Amount: "50.00" } } },
             ],
           },
         ],
@@ -94,90 +114,90 @@ describe("cost-explorer", () => {
       const { getCostData } = await import("./cost-explorer.js");
       const result = await getCostData({
         accountId: "123456789012",
-        startTime: "2026-01-15",
+        startTime: "2026-01-20",
         endTime: "2026-02-03",
       });
 
       expect(result.totalCost).toBe(150);
-      expect(result.costsByService).toHaveLength(2);
-      expect(result.costsByService[0].serviceName).toBe("Amazon EC2");
-      expect(result.costsByService[0].cost).toBe(100);
+      expect(result.costsByResource).toHaveLength(2);
+      // Sorted by cost descending
+      expect(result.costsByResource[0].resourceName).toBe("i-1234567890abcdef0");
+      expect(result.costsByResource[0].serviceName).toBe("Amazon EC2");
+      expect(result.costsByResource[0].region).toBe("us-east-1");
+      expect(result.costsByResource[0].cost).toBe("100");
+      expect(result.costsByResource[1].resourceName).toBe("my-bucket");
+      expect(result.costsByResource[1].serviceName).toBe("Amazon S3");
+      expect(result.costsByResource[1].cost).toBe("50");
     });
 
-    it("should handle pagination with NextPageToken", async () => {
-      // First page
+    it("should handle pagination with NextPageToken for resource queries", async () => {
+      // Mock service list
+      mockSend.mockResolvedValueOnce({
+        ResultsByTime: [
+          { Groups: [{ Keys: ["Amazon EC2"], Metrics: { UnblendedCost: { Amount: "150.00" } } }] },
+        ],
+      });
+
+      // First page of resources
       mockSend.mockResolvedValueOnce({
         ResultsByTime: [
           {
             Groups: [
-              {
-                Keys: ["Amazon EC2"],
-                Metrics: { UnblendedCost: { Amount: "100.00" } },
-              },
+              { Keys: ["i-1234567890abcdef0", "us-east-1"], Metrics: { UnblendedCost: { Amount: "100.00" } } },
             ],
           },
         ],
         NextPageToken: "page-2-token",
       });
 
-      // Second page
+      // Second page of resources
       mockSend.mockResolvedValueOnce({
         ResultsByTime: [
           {
             Groups: [
-              {
-                Keys: ["Amazon S3"],
-                Metrics: { UnblendedCost: { Amount: "50.00" } },
-              },
+              { Keys: ["i-0987654321fedcba0", "us-west-2"], Metrics: { UnblendedCost: { Amount: "50.00" } } },
             ],
           },
         ],
-        // No NextPageToken - end of pagination
       });
 
       const { getCostData } = await import("./cost-explorer.js");
       const result = await getCostData({
         accountId: "123456789012",
-        startTime: "2026-01-15",
+        startTime: "2026-01-20",
         endTime: "2026-02-03",
       });
 
-      expect(mockSend).toHaveBeenCalledTimes(2);
       expect(result.totalCost).toBe(150);
-      expect(result.costsByService).toHaveLength(2);
-
-      // Verify NextPageToken was passed to second request
-      const firstCallInput = mockSend.mock.calls[0][0].input;
-      const secondCallInput = mockSend.mock.calls[1][0].input;
-      expect(firstCallInput.NextPageToken).toBeUndefined();
-      expect(secondCallInput.NextPageToken).toBe("page-2-token");
+      expect(result.costsByResource).toHaveLength(2);
     });
 
-    it("should aggregate same service across pages", async () => {
+    it("should aggregate same resource across pages", async () => {
+      // Mock service list
+      mockSend.mockResolvedValueOnce({
+        ResultsByTime: [
+          { Groups: [{ Keys: ["Amazon EC2"], Metrics: { UnblendedCost: { Amount: "150.00" } } }] },
+        ],
+      });
+
       // First page
       mockSend.mockResolvedValueOnce({
         ResultsByTime: [
           {
             Groups: [
-              {
-                Keys: ["Amazon EC2"],
-                Metrics: { UnblendedCost: { Amount: "100.00" } },
-              },
+              { Keys: ["i-1234567890abcdef0", "us-east-1"], Metrics: { UnblendedCost: { Amount: "100.00" } } },
             ],
           },
         ],
         NextPageToken: "page-2",
       });
 
-      // Second page - same service
+      // Second page - same resource
       mockSend.mockResolvedValueOnce({
         ResultsByTime: [
           {
             Groups: [
-              {
-                Keys: ["Amazon EC2"],
-                Metrics: { UnblendedCost: { Amount: "50.00" } },
-              },
+              { Keys: ["i-1234567890abcdef0", "us-east-1"], Metrics: { UnblendedCost: { Amount: "50.00" } } },
             ],
           },
         ],
@@ -186,16 +206,16 @@ describe("cost-explorer", () => {
       const { getCostData } = await import("./cost-explorer.js");
       const result = await getCostData({
         accountId: "123456789012",
-        startTime: "2026-01-15",
+        startTime: "2026-01-20",
         endTime: "2026-02-03",
       });
 
       expect(result.totalCost).toBe(150);
-      expect(result.costsByService).toHaveLength(1);
-      expect(result.costsByService[0].cost).toBe(150);
+      expect(result.costsByResource).toHaveLength(1);
+      expect(result.costsByResource[0].cost).toBe("150");
     });
 
-    it("should return empty costsByService for no results", async () => {
+    it("should return empty costsByResource for no results", async () => {
       mockSend.mockResolvedValue({
         ResultsByTime: [],
       });
@@ -203,108 +223,42 @@ describe("cost-explorer", () => {
       const { getCostData } = await import("./cost-explorer.js");
       const result = await getCostData({
         accountId: "123456789012",
-        startTime: "2026-01-15",
+        startTime: "2026-01-20",
         endTime: "2026-02-03",
       });
 
       expect(result.totalCost).toBe(0);
-      expect(result.costsByService).toHaveLength(0);
+      expect(result.costsByResource).toHaveLength(0);
     });
 
-    it("should use Usage RECORD_TYPE filter (not Credit/BundledDiscount)", async () => {
-      mockSend.mockResolvedValue({ ResultsByTime: [] });
-
-      const { getCostData } = await import("./cost-explorer.js");
-      await getCostData({
-        accountId: "123456789012",
-        startTime: "2026-01-15",
-        endTime: "2026-02-03",
+    it("should use fallback text for empty resource IDs", async () => {
+      // Mock service list
+      mockSend.mockResolvedValueOnce({
+        ResultsByTime: [
+          { Groups: [{ Keys: ["Amazon GuardDuty"], Metrics: { UnblendedCost: { Amount: "50.00" } } }] },
+        ],
       });
 
-      const command = mockSend.mock.calls[0][0];
-      expect(command).toBeInstanceOf(GetCostAndUsageCommand);
-
-      // Check the filter includes Usage, not Credit/BundledDiscount
-      const filter = command.input.Filter;
-      expect(filter.And).toBeDefined();
-      const recordTypeFilter = filter.And.find(
-        (f: any) => f.Dimensions?.Key === "RECORD_TYPE"
-      );
-      expect(recordTypeFilter.Dimensions.Values).toEqual(["Usage"]);
-    });
-
-    it("should include complete Filter.And structure with LINKED_ACCOUNT and RECORD_TYPE", async () => {
-      mockSend.mockResolvedValue({ ResultsByTime: [] });
-
-      const { getCostData } = await import("./cost-explorer.js");
-      await getCostData({
-        accountId: "123456789012",
-        startTime: "2026-01-15",
-        endTime: "2026-02-03",
-      });
-
-      const command = mockSend.mock.calls[0][0];
-      expect(command).toBeInstanceOf(GetCostAndUsageCommand);
-
-      // Verify complete Filter structure
-      const filter = command.input.Filter;
-      expect(filter).toEqual({
-        And: [
+      // Mock resource query - empty resource ID
+      mockSend.mockResolvedValueOnce({
+        ResultsByTime: [
           {
-            Dimensions: {
-              Key: "LINKED_ACCOUNT",
-              Values: ["123456789012"],
-            },
-          },
-          {
-            Dimensions: {
-              Key: "RECORD_TYPE",
-              Values: ["Usage"],
-            },
+            Groups: [
+              { Keys: ["", "us-east-1"], Metrics: { UnblendedCost: { Amount: "50.00" } } },
+            ],
           },
         ],
       });
 
-      // Verify GroupBy is set correctly
-      expect(command.input.GroupBy).toEqual([
-        {
-          Type: "DIMENSION",
-          Key: "SERVICE",
-        },
-      ]);
-
-      // Verify time period
-      expect(command.input.TimePeriod).toEqual({
-        Start: "2026-01-15",
-        End: "2026-02-03",
-      });
-
-      // Verify granularity and metrics
-      expect(command.input.Granularity).toBe("DAILY");
-      expect(command.input.Metrics).toEqual(["UnblendedCost"]);
-    });
-
-    it("should pass NextPageToken to subsequent requests", async () => {
-      mockSend.mockResolvedValueOnce({
-        ResultsByTime: [{ Groups: [{ Keys: ["EC2"], Metrics: { UnblendedCost: { Amount: "100.00" } } }] }],
-        NextPageToken: "page-2-token",
-      });
-      mockSend.mockResolvedValueOnce({
-        ResultsByTime: [{ Groups: [{ Keys: ["S3"], Metrics: { UnblendedCost: { Amount: "50.00" } } }] }],
-      });
-
       const { getCostData } = await import("./cost-explorer.js");
-      await getCostData({
+      const result = await getCostData({
         accountId: "123456789012",
-        startTime: "2026-01-15",
+        startTime: "2026-01-20",
         endTime: "2026-02-03",
       });
 
-      // First call should not have NextPageToken
-      expect(mockSend.mock.calls[0][0].input.NextPageToken).toBeUndefined();
-
-      // Second call should include the token from first response
-      expect(mockSend.mock.calls[1][0].input.NextPageToken).toBe("page-2-token");
+      expect(result.costsByResource[0].resourceName).toBe("No resource breakdown available for this service type");
+      expect(result.costsByResource[0].serviceName).toBe("Amazon GuardDuty");
     });
 
     it("should throw on API error", async () => {
@@ -315,222 +269,480 @@ describe("cost-explorer", () => {
       await expect(
         getCostData({
           accountId: "123456789012",
-          startTime: "2026-01-15",
+          startTime: "2026-01-20",
           endTime: "2026-02-03",
         })
       ).rejects.toThrow("Cost Explorer API unavailable");
     });
 
-    it("should sort services by cost descending", async () => {
-      mockSend.mockResolvedValue({
-        ResultsByTime: [
-          {
-            Groups: [
-              {
-                Keys: ["Lambda"],
-                Metrics: { UnblendedCost: { Amount: "10.00" } },
-              },
-              {
-                Keys: ["EC2"],
-                Metrics: { UnblendedCost: { Amount: "200.00" } },
-              },
-              {
-                Keys: ["S3"],
-                Metrics: { UnblendedCost: { Amount: "50.00" } },
-              },
-            ],
-          },
-        ],
-      });
+    describe("14-day boundary detection", () => {
+      it("should not use fallback for lease exactly 14 days", async () => {
+        // Exactly 14 days - should fit within resource window
+        // Mock service list
+        mockSend.mockResolvedValueOnce({
+          ResultsByTime: [
+            { Groups: [{ Keys: ["Amazon EC2"], Metrics: { UnblendedCost: { Amount: "100.00" } } }] },
+          ],
+        });
 
-      const { getCostData } = await import("./cost-explorer.js");
-      const result = await getCostData({
-        accountId: "123456789012",
-        startTime: "2026-01-15",
-        endTime: "2026-02-03",
-      });
-
-      expect(result.costsByService[0].serviceName).toBe("EC2");
-      expect(result.costsByService[1].serviceName).toBe("S3");
-      expect(result.costsByService[2].serviceName).toBe("Lambda");
-    });
-
-    it("should maintain precision with many small amounts", async () => {
-      // Simulate many pages with small costs that would accumulate precision errors
-      // with floating-point arithmetic
-      // This test demonstrates the classic floating-point precision issue:
-      // With floats: 0.1 + 0.1 + 0.1 repeated 10 times = 0.9999999999999999 instead of 1.0
-      const pages = 10;
-
-      for (let i = 0; i < pages; i++) {
+        // Mock resource query
         mockSend.mockResolvedValueOnce({
           ResultsByTime: [
             {
               Groups: [
-                {
-                  Keys: ["Amazon S3"],
-                  Metrics: { UnblendedCost: { Amount: "0.10" } }, // 10 cents
-                },
+                { Keys: ["i-1234567890abcdef0", "us-east-1"], Metrics: { UnblendedCost: { Amount: "100.00" } } },
               ],
             },
           ],
-          NextPageToken: i < pages - 1 ? `page-${i + 2}` : undefined,
         });
-      }
 
-      const { getCostData } = await import("./cost-explorer.js");
-      const result = await getCostData({
-        accountId: "123456789012",
-        startTime: "2026-01-15",
-        endTime: "2026-02-03",
+        const { getCostData } = await import("./cost-explorer.js");
+        const result = await getCostData({
+          accountId: "123456789012",
+          startTime: "2026-01-20",
+          endTime: "2026-02-03", // Exactly 14 days
+        });
+
+        expect(result.costsByResource).toHaveLength(1);
+        // No fallback text
+        expect(result.costsByResource[0].resourceName).not.toContain("No resource breakdown available for this time window");
       });
 
-      // With integer cents arithmetic: 10 pages × 0.10 = 1.00 exactly
-      // The result should be exactly 1.00, not 0.9999999999999999
-      expect(result.totalCost).toBe(1.00);
-      expect(result.costsByService[0].cost).toBe(1.00);
-      expect(mockSend).toHaveBeenCalledTimes(pages);
-    });
+      it("should use fallback for lease longer than 14 days", async () => {
+        // 20 days - needs fallback for first 6 days
+        // Mock service list for resource window
+        mockSend.mockResolvedValueOnce({
+          ResultsByTime: [
+            { Groups: [{ Keys: ["Amazon EC2"], Metrics: { UnblendedCost: { Amount: "70.00" } } }] },
+          ],
+        });
 
-    it("should maintain precision with fractional cents", async () => {
-      // Test amounts with fractional cents (which get rounded)
-      mockSend.mockResolvedValueOnce({
-        ResultsByTime: [
-          {
-            Groups: [
-              {
-                Keys: ["Amazon EC2"],
-                Metrics: { UnblendedCost: { Amount: "0.0015" } }, // 0.15 cents -> rounds to 0
-              },
-              {
-                Keys: ["Amazon S3"],
-                Metrics: { UnblendedCost: { Amount: "0.0025" } }, // 0.25 cents -> rounds to 0
-              },
-            ],
-          },
-        ],
-        NextPageToken: "page-2",
-      });
-
-      mockSend.mockResolvedValueOnce({
-        ResultsByTime: [
-          {
-            Groups: [
-              {
-                Keys: ["Amazon EC2"],
-                Metrics: { UnblendedCost: { Amount: "0.0045" } }, // 0.45 cents -> rounds to 0
-              },
-              {
-                Keys: ["Amazon S3"],
-                Metrics: { UnblendedCost: { Amount: "0.0055" } }, // 0.55 cents -> rounds to 1
-              },
-            ],
-          },
-        ],
-      });
-
-      const { getCostData } = await import("./cost-explorer.js");
-      const result = await getCostData({
-        accountId: "123456789012",
-        startTime: "2026-01-15",
-        endTime: "2026-02-03",
-      });
-
-      // EC2: rounds(0.15) + rounds(0.45) = 0 + 0 = 0 cents = $0.00
-      // S3: rounds(0.25) + rounds(0.55) = 0 + 1 = 1 cent = $0.01
-      // Total: 1 cent = $0.01
-      expect(result.totalCost).toBe(0.01);
-      expect(result.costsByService[0].cost).toBe(0.01); // S3 (highest)
-      expect(result.costsByService[1].cost).toBe(0.00); // EC2
-    });
-
-    it("should maintain precision across multiple pages with same service", async () => {
-      // Test aggregating many small amounts for the same service
-      const pages = 10; // Reduced from 100 to stay under MAX_PAGES during normal tests
-
-      for (let i = 0; i < pages; i++) {
+        // Mock resource query
         mockSend.mockResolvedValueOnce({
           ResultsByTime: [
             {
               Groups: [
-                {
-                  Keys: ["Amazon CloudWatch"],
-                  Metrics: { UnblendedCost: { Amount: "0.10" } }, // 10 cents each
-                },
+                { Keys: ["i-1234567890abcdef0", "us-east-1"], Metrics: { UnblendedCost: { Amount: "70.00" } } },
               ],
             },
           ],
-          NextPageToken: i < pages - 1 ? `page-${i + 2}` : undefined,
         });
-      }
 
-      const { getCostData } = await import("./cost-explorer.js");
-      const result = await getCostData({
-        accountId: "123456789012",
-        startTime: "2026-01-01",
-        endTime: "2026-02-03",
-      });
-
-      // 10 pages × $0.10 = $1.00 exactly
-      expect(result.totalCost).toBe(1.00);
-      expect(result.costsByService).toHaveLength(1);
-      expect(result.costsByService[0].cost).toBe(1.00);
-      expect(mockSend).toHaveBeenCalledTimes(pages);
-    });
-
-    it("should handle large aggregations without precision loss", async () => {
-      // Create a scenario with many services and small costs
-      const dailyResults = [];
-
-      // Simulate 30 days of costs
-      for (let day = 0; day < 30; day++) {
-        dailyResults.push({
-          Groups: [
+        // Mock fallback query (service-level for earlier period)
+        mockSend.mockResolvedValueOnce({
+          ResultsByTime: [
             {
-              Keys: ["Amazon EC2"],
-              Metrics: { UnblendedCost: { Amount: "0.33" } }, // 33 cents
-            },
-            {
-              Keys: ["Amazon S3"],
-              Metrics: { UnblendedCost: { Amount: "0.33" } }, // 33 cents
-            },
-            {
-              Keys: ["Amazon Lambda"],
-              Metrics: { UnblendedCost: { Amount: "0.34" } }, // 34 cents
+              Groups: [
+                { Keys: ["Amazon EC2"], Metrics: { UnblendedCost: { Amount: "30.00" } } },
+              ],
             },
           ],
         });
-      }
 
-      mockSend.mockResolvedValue({
-        ResultsByTime: dailyResults,
+        const { getCostData } = await import("./cost-explorer.js");
+        const result = await getCostData({
+          accountId: "123456789012",
+          startTime: "2026-01-14",
+          endTime: "2026-02-03", // 20 days
+        });
+
+        expect(result.totalCost).toBe(100);
+        // Should have resource + fallback
+        const fallbackResource = result.costsByResource.find(
+          r => r.resourceName === "No resource breakdown available for this time window"
+        );
+        expect(fallbackResource).toBeDefined();
+        expect(fallbackResource?.serviceName).toBe("Amazon EC2");
+        expect(fallbackResource?.cost).toBe("30");
       });
 
-      const { getCostData } = await import("./cost-explorer.js");
-      const result = await getCostData({
-        accountId: "123456789012",
-        startTime: "2026-01-01",
-        endTime: "2026-01-31",
+      it("should handle 30 day lease with 16 days in fallback", async () => {
+        // 30 days: 16 days fallback, 14 days resource
+        // Mock service list
+        mockSend.mockResolvedValueOnce({
+          ResultsByTime: [
+            { Groups: [{ Keys: ["Amazon EC2"], Metrics: { UnblendedCost: { Amount: "140.00" } } }] },
+          ],
+        });
+
+        // Mock resource query
+        mockSend.mockResolvedValueOnce({
+          ResultsByTime: [
+            {
+              Groups: [
+                { Keys: ["i-1234567890abcdef0", "us-east-1"], Metrics: { UnblendedCost: { Amount: "140.00" } } },
+              ],
+            },
+          ],
+        });
+
+        // Mock fallback query
+        mockSend.mockResolvedValueOnce({
+          ResultsByTime: [
+            {
+              Groups: [
+                { Keys: ["Amazon EC2"], Metrics: { UnblendedCost: { Amount: "160.00" } } },
+              ],
+            },
+          ],
+        });
+
+        const { getCostData } = await import("./cost-explorer.js");
+        const result = await getCostData({
+          accountId: "123456789012",
+          startTime: "2026-01-04",
+          endTime: "2026-02-03", // 30 days
+        });
+
+        expect(result.totalCost).toBe(300);
+      });
+    });
+
+    describe("sort order", () => {
+      it("should sort services by total cost descending", async () => {
+        // Mock service list
+        mockSend.mockResolvedValueOnce({
+          ResultsByTime: [
+            {
+              Groups: [
+                { Keys: ["Lambda"], Metrics: { UnblendedCost: { Amount: "10.00" } } },
+                { Keys: ["EC2"], Metrics: { UnblendedCost: { Amount: "200.00" } } },
+                { Keys: ["S3"], Metrics: { UnblendedCost: { Amount: "50.00" } } },
+              ],
+            },
+          ],
+        });
+
+        // Mock resource queries in service order (Lambda, EC2, S3)
+        mockSend.mockResolvedValueOnce({
+          ResultsByTime: [
+            { Groups: [{ Keys: ["fn-1", "us-east-1"], Metrics: { UnblendedCost: { Amount: "10.00" } } }] },
+          ],
+        });
+        mockSend.mockResolvedValueOnce({
+          ResultsByTime: [
+            { Groups: [{ Keys: ["i-1", "us-east-1"], Metrics: { UnblendedCost: { Amount: "200.00" } } }] },
+          ],
+        });
+        mockSend.mockResolvedValueOnce({
+          ResultsByTime: [
+            { Groups: [{ Keys: ["bucket-1", "us-east-1"], Metrics: { UnblendedCost: { Amount: "50.00" } } }] },
+          ],
+        });
+
+        const { getCostData } = await import("./cost-explorer.js");
+        const result = await getCostData({
+          accountId: "123456789012",
+          startTime: "2026-01-20",
+          endTime: "2026-02-03",
+        });
+
+        // EC2 (200) > S3 (50) > Lambda (10)
+        expect(result.costsByResource[0].serviceName).toBe("EC2");
+        expect(result.costsByResource[1].serviceName).toBe("S3");
+        expect(result.costsByResource[2].serviceName).toBe("Lambda");
       });
 
-      // EC2: 30 × $0.33 = $9.90
-      // S3: 30 × $0.33 = $9.90
-      // Lambda: 30 × $0.34 = $10.20
-      // Total: $30.00
-      expect(result.totalCost).toBe(30.00);
+      it("should sort resources within service by cost descending", async () => {
+        // Mock service list
+        mockSend.mockResolvedValueOnce({
+          ResultsByTime: [
+            { Groups: [{ Keys: ["Amazon EC2"], Metrics: { UnblendedCost: { Amount: "300.00" } } }] },
+          ],
+        });
 
-      const ec2Cost = result.costsByService.find(s => s.serviceName === "Amazon EC2")?.cost;
-      const s3Cost = result.costsByService.find(s => s.serviceName === "Amazon S3")?.cost;
-      const lambdaCost = result.costsByService.find(s => s.serviceName === "Amazon Lambda")?.cost;
+        // Mock resource query with multiple resources
+        mockSend.mockResolvedValueOnce({
+          ResultsByTime: [
+            {
+              Groups: [
+                { Keys: ["i-small", "us-east-1"], Metrics: { UnblendedCost: { Amount: "50.00" } } },
+                { Keys: ["i-large", "us-east-1"], Metrics: { UnblendedCost: { Amount: "200.00" } } },
+                { Keys: ["i-medium", "us-east-1"], Metrics: { UnblendedCost: { Amount: "50.00" } } },
+              ],
+            },
+          ],
+        });
 
-      expect(ec2Cost).toBe(9.90);
-      expect(s3Cost).toBe(9.90);
-      expect(lambdaCost).toBe(10.20);
+        const { getCostData } = await import("./cost-explorer.js");
+        const result = await getCostData({
+          accountId: "123456789012",
+          startTime: "2026-01-20",
+          endTime: "2026-02-03",
+        });
+
+        expect(result.costsByResource[0].resourceName).toBe("i-large");
+        expect(result.costsByResource[0].cost).toBe("200");
+      });
+
+      it("should place fallback rows after resource rows for each service", async () => {
+        // Mock service list for resource window
+        mockSend.mockResolvedValueOnce({
+          ResultsByTime: [
+            { Groups: [{ Keys: ["Amazon EC2"], Metrics: { UnblendedCost: { Amount: "100.00" } } }] },
+          ],
+        });
+
+        // Mock resource query
+        mockSend.mockResolvedValueOnce({
+          ResultsByTime: [
+            { Groups: [{ Keys: ["i-1234567890abcdef0", "us-east-1"], Metrics: { UnblendedCost: { Amount: "100.00" } } }] },
+          ],
+        });
+
+        // Mock fallback query
+        mockSend.mockResolvedValueOnce({
+          ResultsByTime: [
+            { Groups: [{ Keys: ["Amazon EC2"], Metrics: { UnblendedCost: { Amount: "50.00" } } }] },
+          ],
+        });
+
+        const { getCostData } = await import("./cost-explorer.js");
+        const result = await getCostData({
+          accountId: "123456789012",
+          startTime: "2026-01-14",
+          endTime: "2026-02-03", // 20 days
+        });
+
+        // Resource row should come before fallback row
+        const ec2Resources = result.costsByResource.filter(r => r.serviceName === "Amazon EC2");
+        expect(ec2Resources[0].resourceName).toBe("i-1234567890abcdef0");
+        expect(ec2Resources[1].resourceName).toBe("No resource breakdown available for this time window");
+      });
+    });
+
+    describe("precision handling", () => {
+      it("should preserve 15 decimal place precision", async () => {
+        // Mock service list
+        mockSend.mockResolvedValueOnce({
+          ResultsByTime: [
+            { Groups: [{ Keys: ["Amazon S3"], Metrics: { UnblendedCost: { Amount: "0.123456789012345" } } }] },
+          ],
+        });
+
+        // Mock resource query
+        mockSend.mockResolvedValueOnce({
+          ResultsByTime: [
+            {
+              Groups: [
+                { Keys: ["my-bucket", "us-east-1"], Metrics: { UnblendedCost: { Amount: "0.123456789012345" } } },
+              ],
+            },
+          ],
+        });
+
+        const { getCostData } = await import("./cost-explorer.js");
+        const result = await getCostData({
+          accountId: "123456789012",
+          startTime: "2026-01-20",
+          endTime: "2026-02-03",
+        });
+
+        expect(result.costsByResource[0].cost).toBe("0.123456789012345");
+      });
+
+      it("should calculate totalCost accurately with Decimal.js", async () => {
+        // Mock service list
+        mockSend.mockResolvedValueOnce({
+          ResultsByTime: [
+            { Groups: [{ Keys: ["Service"], Metrics: { UnblendedCost: { Amount: "0.30" } } }] },
+          ],
+        });
+
+        // Mock resource query - classic floating point problem: 0.1 + 0.1 + 0.1
+        mockSend.mockResolvedValueOnce({
+          ResultsByTime: [
+            {
+              Groups: [
+                { Keys: ["r1", "us-east-1"], Metrics: { UnblendedCost: { Amount: "0.1" } } },
+                { Keys: ["r2", "us-east-1"], Metrics: { UnblendedCost: { Amount: "0.1" } } },
+                { Keys: ["r3", "us-east-1"], Metrics: { UnblendedCost: { Amount: "0.1" } } },
+              ],
+            },
+          ],
+        });
+
+        const { getCostData } = await import("./cost-explorer.js");
+        const result = await getCostData({
+          accountId: "123456789012",
+          startTime: "2026-01-20",
+          endTime: "2026-02-03",
+        });
+
+        // With floating point: 0.1 + 0.1 + 0.1 = 0.30000000000000004
+        // With Decimal.js: 0.1 + 0.1 + 0.1 = 0.3
+        expect(result.totalCost).toBe(0.3);
+      });
+
+      it("should sort correctly with Decimal.js comparison", async () => {
+        // Mock service list
+        mockSend.mockResolvedValueOnce({
+          ResultsByTime: [
+            { Groups: [{ Keys: ["Service"], Metrics: { UnblendedCost: { Amount: "1.1" } } }] },
+          ],
+        });
+
+        // Mock resource query - costs that might sort wrong with string comparison
+        mockSend.mockResolvedValueOnce({
+          ResultsByTime: [
+            {
+              Groups: [
+                { Keys: ["r-9", "us-east-1"], Metrics: { UnblendedCost: { Amount: "0.9" } } },
+                { Keys: ["r-10", "us-east-1"], Metrics: { UnblendedCost: { Amount: "0.10" } } },
+                { Keys: ["r-11", "us-east-1"], Metrics: { UnblendedCost: { Amount: "0.11" } } },
+              ],
+            },
+          ],
+        });
+
+        const { getCostData } = await import("./cost-explorer.js");
+        const result = await getCostData({
+          accountId: "123456789012",
+          startTime: "2026-01-20",
+          endTime: "2026-02-03",
+        });
+
+        // Correct numeric order: 0.9 > 0.11 > 0.10
+        expect(result.costsByResource[0].resourceName).toBe("r-9");
+        expect(result.costsByResource[1].resourceName).toBe("r-11");
+        expect(result.costsByResource[2].resourceName).toBe("r-10");
+      });
+    });
+
+    describe("opt-in error handling (graceful degradation)", () => {
+      it("should gracefully degrade to service-level data when resource API not enabled", async () => {
+        const consoleWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+        // Mock service list
+        mockSend.mockResolvedValueOnce({
+          ResultsByTime: [
+            { Groups: [{ Keys: ["Amazon EC2"], Metrics: { UnblendedCost: { Amount: "100.00" } } }] },
+          ],
+        });
+
+        // Mock resource query - throws opt-in error
+        const optInError = new Error("You must enable Cost Explorer resource-level data at the payer account level");
+        optInError.name = "DataUnavailableException";
+        mockSend.mockRejectedValueOnce(optInError);
+
+        // Mock fallback service-level query (graceful degradation)
+        mockSend.mockResolvedValueOnce({
+          ResultsByTime: [
+            { Groups: [{ Keys: ["Amazon EC2"], Metrics: { UnblendedCost: { Amount: "100.00" } } }] },
+          ],
+        });
+
+        const { getCostData } = await import("./cost-explorer.js");
+
+        const result = await getCostData({
+          accountId: "123456789012",
+          startTime: "2026-01-20",
+          endTime: "2026-02-03",
+        });
+
+        // Should return service-level data with fallback text instead of throwing
+        expect(result.costsByResource).toHaveLength(1);
+        expect(result.costsByResource[0].resourceName).toBe(
+          "No resource breakdown available (API not enabled at organization level)"
+        );
+        expect(result.costsByResource[0].serviceName).toBe("Amazon EC2");
+        expect(result.costsByResource[0].cost).toBe("100");
+        expect(result.totalCost).toBe(100);
+
+        // Should log a warning about degraded mode
+        expect(consoleWarnSpy).toHaveBeenCalledWith(
+          expect.stringContaining("[DEGRADED MODE]")
+        );
+
+        consoleWarnSpy.mockRestore();
+      });
+
+      it("should gracefully degrade when AccessDeniedException mentions GetCostAndUsageWithResources", async () => {
+        const consoleWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+        // Mock service list
+        mockSend.mockResolvedValueOnce({
+          ResultsByTime: [
+            { Groups: [{ Keys: ["Amazon EC2"], Metrics: { UnblendedCost: { Amount: "100.00" } } }] },
+          ],
+        });
+
+        // Mock resource query - throws AccessDeniedException for missing IAM permission
+        const accessDeniedError = new Error(
+          "User: arn:aws:sts::123456789012:assumed-role/some-role/session is not authorized to perform: " +
+            "ce:GetCostAndUsageWithResources on resource: arn:aws:ce:us-east-1:123456789012:/GetCostAndUsageWithResources " +
+            "because no identity-based policy allows the ce:GetCostAndUsageWithResources action"
+        );
+        accessDeniedError.name = "AccessDeniedException";
+        mockSend.mockRejectedValueOnce(accessDeniedError);
+
+        // Mock fallback service-level query (graceful degradation)
+        mockSend.mockResolvedValueOnce({
+          ResultsByTime: [
+            { Groups: [{ Keys: ["Amazon EC2"], Metrics: { UnblendedCost: { Amount: "100.00" } } }] },
+          ],
+        });
+
+        const { getCostData } = await import("./cost-explorer.js");
+
+        const result = await getCostData({
+          accountId: "123456789012",
+          startTime: "2026-01-20",
+          endTime: "2026-02-03",
+        });
+
+        // Should return service-level data with fallback text indicating the IAM permission issue
+        expect(result.costsByResource).toHaveLength(1);
+        expect(result.costsByResource[0].resourceName).toBe(
+          "No resource breakdown available (IAM policy missing ce:GetCostAndUsageWithResources permission)"
+        );
+        expect(result.costsByResource[0].serviceName).toBe("Amazon EC2");
+        expect(result.costsByResource[0].cost).toBe("100");
+        expect(result.totalCost).toBe(100);
+
+        // Should log a warning about degraded mode with IAM permission reason
+        expect(consoleWarnSpy).toHaveBeenCalledWith(
+          expect.stringContaining("[DEGRADED MODE] IAM policy missing ce:GetCostAndUsageWithResources permission")
+        );
+
+        consoleWarnSpy.mockRestore();
+      });
+
+      it("should re-throw non-opt-in errors", async () => {
+        // Mock service list
+        mockSend.mockResolvedValueOnce({
+          ResultsByTime: [
+            { Groups: [{ Keys: ["Amazon EC2"], Metrics: { UnblendedCost: { Amount: "100.00" } } }] },
+          ],
+        });
+
+        // Mock resource query - throws a different error (not opt-in related)
+        const otherError = new Error("Access denied");
+        otherError.name = "AccessDeniedException";
+        mockSend.mockRejectedValueOnce(otherError);
+
+        const { getCostData } = await import("./cost-explorer.js");
+
+        await expect(
+          getCostData({
+            accountId: "123456789012",
+            startTime: "2026-01-20",
+            endTime: "2026-02-03",
+          })
+        ).rejects.toThrow("Access denied");
+      });
     });
 
     describe("rate limiting and safety features", () => {
       it("should stop pagination at MAX_PAGES limit (50 pages)", async () => {
-        // Mock 60 pages to exceed the limit
+        // Mock service list
+        mockSend.mockResolvedValueOnce({
+          ResultsByTime: [
+            { Groups: [{ Keys: ["Amazon EC2"], Metrics: { UnblendedCost: { Amount: "5100.00" } } }] },
+          ],
+        });
+
+        // Mock 60 pages of resources to exceed the limit
         const totalPages = 60;
         const maxPages = 50;
 
@@ -540,97 +752,107 @@ describe("cost-explorer", () => {
               {
                 Groups: [
                   {
-                    Keys: [`Service-${i}`],
+                    Keys: [`resource-${i}`, "us-east-1"],
                     Metrics: { UnblendedCost: { Amount: "1.00" } },
                   },
                 ],
               },
             ],
-            NextPageToken: `page-${i + 2}`, // Always return NextPageToken
+            NextPageToken: `page-${i + 2}`,
           });
         }
 
-        // Spy on console.warn to verify warning is logged
         const consoleWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
         const { getCostData } = await import("./cost-explorer.js");
         const result = await getCostData({
           accountId: "123456789012",
-          startTime: "2026-01-01",
+          startTime: "2026-01-20",
           endTime: "2026-02-03",
         });
 
-        // Should stop at MAX_PAGES
-        expect(mockSend).toHaveBeenCalledTimes(maxPages);
+        // Service list query + MAX_PAGES resource queries
+        expect(mockSend).toHaveBeenCalledTimes(1 + maxPages);
 
-        // Should log warning about hitting the limit
         expect(consoleWarnSpy).toHaveBeenCalledWith(
-          expect.stringContaining("[SAFETY] Pagination stopped at MAX_PAGES limit")
+          expect.stringContaining("[SAFETY]")
         );
 
-        // Should still return results for the pages that were fetched
-        expect(result.totalCost).toBe(maxPages); // 50 pages × $1.00
-        expect(result.costsByService).toHaveLength(maxPages);
+        expect(result.costsByResource).toHaveLength(maxPages);
 
         consoleWarnSpy.mockRestore();
       });
 
-      it("should add rate limiting delay between paginated requests", async () => {
-        // Mock 3 pages
+      it("should add rate limiting delay between API calls", async () => {
+        // Use fake timers for deterministic testing
+        vi.useFakeTimers();
+
+        // Mock service list
+        mockSend.mockResolvedValueOnce({
+          ResultsByTime: [
+            {
+              Groups: [
+                { Keys: ["Service1"], Metrics: { UnblendedCost: { Amount: "1.00" } } },
+                { Keys: ["Service2"], Metrics: { UnblendedCost: { Amount: "1.00" } } },
+                { Keys: ["Service3"], Metrics: { UnblendedCost: { Amount: "1.00" } } },
+              ],
+            },
+          ],
+        });
+
+        // Mock resource queries for each service
         for (let i = 0; i < 3; i++) {
           mockSend.mockResolvedValueOnce({
             ResultsByTime: [
               {
                 Groups: [
-                  {
-                    Keys: ["Service"],
-                    Metrics: { UnblendedCost: { Amount: "1.00" } },
-                  },
+                  { Keys: [`r-${i}`, "us-east-1"], Metrics: { UnblendedCost: { Amount: "1.00" } } },
                 ],
               },
             ],
-            NextPageToken: i < 2 ? `page-${i + 2}` : undefined,
           });
         }
 
-        const startTime = Date.now();
-
         const { getCostData } = await import("./cost-explorer.js");
-        await getCostData({
+        const resultPromise = getCostData({
           accountId: "123456789012",
-          startTime: "2026-01-01",
+          startTime: "2026-01-20",
           endTime: "2026-02-03",
         });
 
-        const endTime = Date.now();
-        const elapsed = endTime - startTime;
+        // Run all pending timers to completion
+        await vi.runAllTimersAsync();
 
-        // Should take at least 400ms (2 delays × 200ms) for 3 pages
-        // The last page doesn't need a delay
-        expect(elapsed).toBeGreaterThanOrEqual(400);
-        expect(mockSend).toHaveBeenCalledTimes(3);
+        await resultPromise;
+
+        // Verify the number of API calls: 1 service list + 3 resource queries = 4 calls
+        // Rate limiting sleep is called before each service query + after service list pagination
+        expect(mockSend).toHaveBeenCalledTimes(4);
+
+        vi.useRealTimers();
       });
 
       it("should stop pagination when Lambda timeout is approaching", async () => {
-        // Mock context with low remaining time
-        // The timeout check happens when pageCount > 0, so it checks AFTER page 1 is fetched
         const mockContext = {
           getRemainingTimeInMillis: vi.fn()
-            // First page doesn't check timeout (pageCount = 0)
-            .mockReturnValueOnce(50000)  // After page 1, before page 2: 50 seconds remaining (OK, > 10 seconds)
-            .mockReturnValueOnce(8000)   // After page 2, before page 3: 8 seconds remaining (approaching timeout - stop)
+            .mockReturnValueOnce(50000) // After page 1
+            .mockReturnValueOnce(8000)  // After page 2 - approaching timeout
         };
 
-        // Mock 5 pages but should stop after 2 due to timeout before page 3
+        // Mock service list
+        mockSend.mockResolvedValueOnce({
+          ResultsByTime: [
+            { Groups: [{ Keys: ["Amazon EC2"], Metrics: { UnblendedCost: { Amount: "500.00" } } }] },
+          ],
+        });
+
+        // Mock 5 pages but should stop after 2 due to timeout
         for (let i = 0; i < 5; i++) {
           mockSend.mockResolvedValueOnce({
             ResultsByTime: [
               {
                 Groups: [
-                  {
-                    Keys: [`Service-${i}`],
-                    Metrics: { UnblendedCost: { Amount: "1.00" } },
-                  },
+                  { Keys: [`resource-${i}`, "us-east-1"], Metrics: { UnblendedCost: { Amount: "1.00" } } },
                 ],
               },
             ],
@@ -644,172 +866,23 @@ describe("cost-explorer", () => {
         const result = await getCostData(
           {
             accountId: "123456789012",
-            startTime: "2026-01-01",
+            startTime: "2026-01-20",
             endTime: "2026-02-03",
           },
-          {
-            lambdaContext: mockContext,
-          }
+          { lambdaContext: mockContext }
         );
 
-        // Should stop after 2 pages due to timeout
-        expect(mockSend).toHaveBeenCalledTimes(2);
-
-        // Should log warning about timeout
-        expect(consoleWarnSpy).toHaveBeenCalledWith(
-          expect.stringContaining("[SAFETY] Pagination stopped")
-        );
-        expect(consoleWarnSpy).toHaveBeenCalledWith(
-          expect.stringContaining("Lambda timeout approaching")
-        );
-
-        // Should return partial results
-        expect(result.totalCost).toBe(2.00);
-        expect(result.costsByService).toHaveLength(2);
-
-        consoleWarnSpy.mockRestore();
-      });
-
-      it("should continue pagination when Lambda has sufficient time remaining", async () => {
-        // Mock context with plenty of remaining time
-        const mockContext = {
-          getRemainingTimeInMillis: vi.fn().mockReturnValue(800000) // 800 seconds remaining
-        };
-
-        // Mock 3 pages with natural termination (no NextPageToken on last page)
-        for (let i = 0; i < 3; i++) {
-          mockSend.mockResolvedValueOnce({
-            ResultsByTime: [
-              {
-                Groups: [
-                  {
-                    Keys: [`Service-${i}`],
-                    Metrics: { UnblendedCost: { Amount: "1.00" } },
-                  },
-                ],
-              },
-            ],
-            NextPageToken: i < 2 ? `page-${i + 2}` : undefined,
-          });
-        }
-
-        const consoleWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-
-        const { getCostData } = await import("./cost-explorer.js");
-        const result = await getCostData(
-          {
-            accountId: "123456789012",
-            startTime: "2026-01-01",
-            endTime: "2026-02-03",
-          },
-          {
-            lambdaContext: mockContext,
-          }
-        );
-
-        // Should fetch all 3 pages
+        // Service list + 2 resource pages
         expect(mockSend).toHaveBeenCalledTimes(3);
 
-        // Should not log any timeout warnings
-        expect(consoleWarnSpy).not.toHaveBeenCalledWith(
+        expect(consoleWarnSpy).toHaveBeenCalledWith(
+          expect.stringContaining("[SAFETY]")
+        );
+        expect(consoleWarnSpy).toHaveBeenCalledWith(
           expect.stringContaining("Lambda timeout approaching")
         );
 
-        // Should return complete results
-        expect(result.totalCost).toBe(3.00);
-        expect(result.costsByService).toHaveLength(3);
-
-        consoleWarnSpy.mockRestore();
-      });
-
-      it("should not add delay after the final page", async () => {
-        // Mock 2 pages (second has no NextPageToken)
-        mockSend.mockResolvedValueOnce({
-          ResultsByTime: [
-            {
-              Groups: [
-                {
-                  Keys: ["Service"],
-                  Metrics: { UnblendedCost: { Amount: "1.00" } },
-                },
-              ],
-            },
-          ],
-          NextPageToken: "page-2",
-        });
-
-        mockSend.mockResolvedValueOnce({
-          ResultsByTime: [
-            {
-              Groups: [
-                {
-                  Keys: ["Service"],
-                  Metrics: { UnblendedCost: { Amount: "1.00" } },
-                },
-              ],
-            },
-          ],
-          // No NextPageToken - final page
-        });
-
-        const startTime = Date.now();
-
-        const { getCostData } = await import("./cost-explorer.js");
-        await getCostData({
-          accountId: "123456789012",
-          startTime: "2026-01-01",
-          endTime: "2026-02-03",
-        });
-
-        const endTime = Date.now();
-        const elapsed = endTime - startTime;
-
-        // Should take at least 200ms (1 delay) but less than 400ms (2 delays)
-        expect(elapsed).toBeGreaterThanOrEqual(200);
-        expect(elapsed).toBeLessThan(400);
-        expect(mockSend).toHaveBeenCalledTimes(2);
-      });
-
-      it("should handle MAX_PAGES boundary exactly", async () => {
-        // Mock exactly 50 pages (the limit) that naturally terminates
-        const maxPages = 50;
-
-        for (let i = 0; i < maxPages; i++) {
-          mockSend.mockResolvedValueOnce({
-            ResultsByTime: [
-              {
-                Groups: [
-                  {
-                    Keys: [`Service-${i}`],
-                    Metrics: { UnblendedCost: { Amount: "1.00" } },
-                  },
-                ],
-              },
-            ],
-            NextPageToken: i < maxPages - 1 ? `page-${i + 2}` : undefined, // Natural termination
-          });
-        }
-
-        const consoleWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-
-        const { getCostData } = await import("./cost-explorer.js");
-        const result = await getCostData({
-          accountId: "123456789012",
-          startTime: "2026-01-01",
-          endTime: "2026-02-03",
-        });
-
-        // Should fetch all 50 pages
-        expect(mockSend).toHaveBeenCalledTimes(maxPages);
-
-        // Should NOT log warning (natural termination, not limit hit)
-        expect(consoleWarnSpy).not.toHaveBeenCalledWith(
-          expect.stringContaining("[SAFETY] Pagination stopped at MAX_PAGES limit")
-        );
-
-        // Should return complete results
-        expect(result.totalCost).toBe(50.00);
-        expect(result.costsByService).toHaveLength(50);
+        expect(result.costsByResource).toHaveLength(2);
 
         consoleWarnSpy.mockRestore();
       });

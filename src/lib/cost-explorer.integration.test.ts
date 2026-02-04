@@ -33,6 +33,7 @@
  */
 
 import { describe, it, expect } from "vitest";
+import { Decimal } from "decimal.js";
 import { getCostData } from "./cost-explorer.js";
 
 /**
@@ -64,10 +65,10 @@ describe.skipIf(!INTEGRATION_TEST_ENABLED)(
     it(
       "should handle pagination with real AWS Cost Explorer API",
       async () => {
-        // Query last 3 months (likely to have multiple services)
+        // Query last 14 days (within resource API window)
         const endDate = new Date();
         const startDate = new Date();
-        startDate.setMonth(startDate.getMonth() - 3);
+        startDate.setDate(startDate.getDate() - 14);
 
         const result = await getCostData({
           accountId: TEST_ACCOUNT_ID,
@@ -79,19 +80,19 @@ describe.skipIf(!INTEGRATION_TEST_ENABLED)(
         expect(result).toBeDefined();
         expect(result.accountId).toBe(TEST_ACCOUNT_ID);
         expect(result.totalCost).toBeGreaterThanOrEqual(0);
-        expect(result.costsByService).toBeInstanceOf(Array);
+        expect(result.costsByResource).toBeInstanceOf(Array);
 
         // Verify costs are properly aggregated
-        if (result.costsByService.length > 0) {
-          const sumOfServices = result.costsByService.reduce(
-            (sum, service) => sum + service.cost,
-            0
+        if (result.costsByResource.length > 0) {
+          const sumOfResources = result.costsByResource.reduce(
+            (sum, resource) => sum.plus(resource.cost),
+            new Decimal(0)
           );
-          // Total should equal sum of services (within floating point precision)
-          expect(Math.abs(result.totalCost - sumOfServices)).toBeLessThan(0.01);
+          // Total should equal sum of resources (within floating point precision)
+          expect(Math.abs(result.totalCost - sumOfResources.toNumber())).toBeLessThan(0.01);
         }
 
-        console.log(`✓ Integration test: Retrieved ${result.costsByService.length} services`);
+        console.log(`✓ Integration test: Retrieved ${result.costsByResource.length} resources`);
         console.log(`  Total cost: $${result.totalCost.toFixed(2)}`);
       }
     );
@@ -107,10 +108,10 @@ describe.skipIf(!INTEGRATION_TEST_ENABLED)(
     it(
       "should handle rate limiting gracefully with real AWS API",
       async () => {
-        // Query last month (should have manageable data)
+        // Query last 7 days (should have manageable data)
         const endDate = new Date();
         const startDate = new Date();
-        startDate.setMonth(startDate.getMonth() - 1);
+        startDate.setDate(startDate.getDate() - 7);
 
         const startTime = Date.now();
 
@@ -124,11 +125,11 @@ describe.skipIf(!INTEGRATION_TEST_ENABLED)(
 
         // Verify result
         expect(result).toBeDefined();
-        expect(result.costsByService).toBeInstanceOf(Array);
+        expect(result.costsByResource).toBeInstanceOf(Array);
 
         // Rate limiting should add delays between pages
-        // If we got multiple services, pagination likely occurred
-        if (result.costsByService.length > 5) {
+        // If we got multiple resources, pagination likely occurred
+        if (result.costsByResource.length > 5) {
           // Should have taken at least some time due to rate limiting
           expect(elapsedSeconds).toBeGreaterThan(0.1);
         }
@@ -160,9 +161,9 @@ describe.skipIf(!INTEGRATION_TEST_ENABLED)(
         expect(result).toBeDefined();
         expect(result.accountId).toBe(TEST_ACCOUNT_ID);
         expect(result.totalCost).toBeGreaterThanOrEqual(0);
-        expect(result.costsByService).toBeInstanceOf(Array);
+        expect(result.costsByResource).toBeInstanceOf(Array);
 
-        console.log(`✓ Empty range test: ${result.costsByService.length} services found`);
+        console.log(`✓ Empty range test: ${result.costsByResource.length} resources found`);
       }
     );
   }

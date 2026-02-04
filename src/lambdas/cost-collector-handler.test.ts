@@ -141,9 +141,9 @@ describe("cost-collector-handler", () => {
       startDate: "2026-01-15",
       endDate: "2026-02-03",
       totalCost: 150.5,
-      costsByService: [
-        { serviceName: "EC2", cost: 100.0 },
-        { serviceName: "S3", cost: 50.5 },
+      costsByResource: [
+        { resourceName: "i-1234567890abcdef0", serviceName: "EC2", region: "us-east-1", cost: "100.00" },
+        { resourceName: "my-bucket", serviceName: "S3", region: "us-west-2", cost: "50.50" },
       ],
     });
 
@@ -188,9 +188,9 @@ describe("cost-collector-handler", () => {
     expect(uploadCsvCall[1]).toBe("550e8400-e29b-41d4-a716-446655440000.csv");
 
     const actualCsv = uploadCsvCall[2] as string;
-    expect(actualCsv).toContain("Service,Cost");
-    expect(actualCsv).toContain("EC2,100.00");
-    expect(actualCsv).toContain("S3,50.50");
+    expect(actualCsv).toContain("Resource Name,Service,Region,Cost");
+    expect(actualCsv).toContain("i-1234567890abcdef0,EC2,us-east-1,100.00");
+    expect(actualCsv).toContain("my-bucket,S3,us-west-2,50.50");
 
     expect(mockGetPresignedUrl).toHaveBeenCalledWith(
       "test-bucket",
@@ -201,8 +201,8 @@ describe("cost-collector-handler", () => {
     // Verify billing window calculated correctly using real calculateBillingWindow
     const getCostDataCall = mockGetCostData.mock.calls[0];
     const billingParams = getCostDataCall[0];
-    expect(billingParams.startTime).toBe("2026-01-15"); // Lease start 2026-01-15T10:00:00Z with 8h padding rounds to 2026-01-15
-    expect(billingParams.endTime).toBe("2026-02-03"); // Event time 2026-02-02T15:00:00Z with 8h padding rounds to 2026-02-03
+    expect(billingParams.startTime).toBe("2026-01-15");
+    expect(billingParams.endTime).toBe("2026-02-03");
 
     expect(mockEmitLeaseCostsGenerated).toHaveBeenCalledWith(
       "test-event-bus",
@@ -224,7 +224,7 @@ describe("cost-collector-handler", () => {
       startDate: "2026-01-15",
       endDate: "2026-02-03",
       totalCost: 0,
-      costsByService: [],
+      costsByResource: [],
     });
 
     await handler(validPayload);
@@ -232,7 +232,7 @@ describe("cost-collector-handler", () => {
     // Verify actual CSV content for empty costs
     const uploadCsvCall = mockUploadCsv.mock.calls[0];
     const actualCsv = uploadCsvCall[2] as string;
-    expect(actualCsv).toBe("Service,Cost"); // Only header row
+    expect(actualCsv).toBe("Resource Name,Service,Region,Cost"); // Only header row
 
     expect(mockEmitLeaseCostsGenerated).toHaveBeenCalledWith(
       "test-event-bus",
@@ -275,87 +275,28 @@ describe("cost-collector-handler", () => {
     Object.setPrototypeOf(notFoundError, ResourceNotFoundException.prototype);
     mockSchedulerSend.mockRejectedValue(notFoundError);
 
-    // Should complete successfully - ResourceNotFoundException is expected when schedule auto-deleted
     await expect(handler(validPayload)).resolves.toBeUndefined();
     expect(mockEmitLeaseCostsGenerated).toHaveBeenCalled();
   });
 
-  /**
-   * DUPLICATE EVENTS ARE EXPECTED BEHAVIOR
-   * =======================================
-   *
-   * This test demonstrates that duplicate LeaseCostsGenerated events are expected and intentional.
-   * Consumers MUST be idempotent to handle duplicates correctly.
-   *
-   * WHY DUPLICATES OCCUR:
-   *
-   * 1. EventBridge At-Least-Once Delivery Guarantee
-   *    - EventBridge guarantees at-least-once delivery, not exactly-once
-   *    - The same event may be delivered to consumers multiple times
-   *    - This is standard EventBridge behavior, not a bug in our system
-   *
-   * 2. Concurrent Lambda Invocations
-   *    - EventBridge Scheduler may trigger multiple Lambda invocations for the same schedule
-   *    - Both invocations process the same lease and emit separate events
-   *    - Race conditions between concurrent invocations are unavoidable
-   *
-   * 3. Retry Behavior
-   *    - If a Lambda invocation fails after emitting the event but before completion,
-   *      the retry will emit another event for the same lease
-   *
-   * CONSUMER REQUIREMENTS:
-   *
-   * All consumers of LeaseCostsGenerated events MUST implement idempotent processing:
-   *
-   * - Use the `leaseId` field to deduplicate events
-   * - Check if costs for this leaseId have already been processed
-   * - Use database constraints (e.g., unique constraint on leaseId) to prevent duplicates
-   * - Or use DynamoDB conditional writes to ensure exactly-once processing
-   *
-   * Example idempotent consumer pattern:
-   *
-   * ```typescript
-   * async function handleLeaseCostsGenerated(event: LeaseCostsGeneratedDetail) {
-   *   // Check if already processed (idempotency)
-   *   const existing = await db.query("SELECT 1 FROM processed_leases WHERE lease_id = ?", [event.leaseId]);
-   *   if (existing.length > 0) {
-   *     console.log(`Lease ${event.leaseId} already processed, skipping duplicate event`);
-   *     return; // Idempotent: safe to process duplicate
-   *   }
-   *
-   *   // Process the event
-   *   await processLeaseCosts(event);
-   *
-   *   // Mark as processed
-   *   await db.execute("INSERT INTO processed_leases (lease_id, ...) VALUES (?, ...)", [event.leaseId, ...]);
-   * }
-   * ```
-   */
   it("should emit duplicate events on concurrent invocations (expected behavior - consumers must be idempotent)", async () => {
-    // Simulates race condition: EventBridge Scheduler triggers multiple Lambda invocations
-    // Both invocations process the same lease and emit separate LeaseCostsGenerated events
     const notFoundError = new Error("Schedule not found") as any;
     notFoundError.name = "ResourceNotFoundException";
     Object.setPrototypeOf(notFoundError, ResourceNotFoundException.prototype);
     mockSchedulerSend.mockRejectedValue(notFoundError);
 
-    // Both invocations should complete successfully
     const results = await Promise.all([
       handler(validPayload),
       handler(validPayload),
     ]);
 
     expect(results).toEqual([undefined, undefined]);
-
-    // CRITICAL: Event emitted twice - this is EXPECTED BEHAVIOR
-    // Consumers MUST handle duplicate events using the leaseId field for deduplication
     expect(mockEmitLeaseCostsGenerated).toHaveBeenCalledTimes(2);
   });
 
   it("should handle other schedule delete errors gracefully (best-effort)", async () => {
     mockSchedulerSend.mockRejectedValue(new Error("Scheduler service error"));
 
-    // Should complete successfully (cleanup is best-effort)
     await expect(handler(validPayload)).resolves.toBeUndefined();
     expect(mockEmitLeaseCostsGenerated).toHaveBeenCalled();
   });
@@ -364,7 +305,7 @@ describe("cost-collector-handler", () => {
     const invalidPayload = {
       leaseId: "not-a-uuid",
       userEmail: "invalid-email",
-      accountId: "12345", // Not 12 digits
+      accountId: "12345",
       leaseEndTimestamp: "invalid-date",
       scheduleName: "test",
     };
@@ -377,7 +318,6 @@ describe("cost-collector-handler", () => {
   it("should throw on missing required fields", async () => {
     const incompletePayload = {
       leaseId: "550e8400-e29b-41d4-a716-446655440000",
-      // Missing other fields
     };
 
     await expect(handler(incompletePayload)).rejects.toThrow(
@@ -406,7 +346,7 @@ describe("cost-collector-handler", () => {
   it("should include field name in error for invalid accountId", async () => {
     const invalidPayload = {
       ...validPayload,
-      accountId: "12345", // Not 12 digits
+      accountId: "12345",
     };
 
     await expect(handler(invalidPayload)).rejects.toThrow(/accountId/);
@@ -442,7 +382,6 @@ describe("cost-collector-handler", () => {
     mockGetCostData.mockRejectedValue(throttleError);
 
     await expect(handler(validPayload)).rejects.toThrow("ThrottlingException");
-    // S3 upload should not be attempted after Cost Explorer failure
     expect(mockUploadCsv).not.toHaveBeenCalled();
   });
 
@@ -455,31 +394,32 @@ describe("cost-collector-handler", () => {
   });
 
   it("should handle Cost Explorer returning large datasets", async () => {
-    // Simulate large dataset with many services
-    const manyServices = Array.from({ length: 200 }, (_, i) => ({
-      serviceName: `Service-${i}`,
-      cost: Math.random() * 100,
+    const manyResources = Array.from({ length: 200 }, (_, i) => ({
+      resourceName: `resource-${i}`,
+      serviceName: `Service-${Math.floor(i / 10)}`,
+      region: "us-east-1",
+      cost: (Math.random() * 100).toFixed(10),
     }));
-    const totalCost = manyServices.reduce((sum, s) => sum + s.cost, 0);
+    const totalCost = manyResources.reduce((sum, r) => sum + parseFloat(r.cost), 0);
 
     mockGetCostData.mockResolvedValue({
       accountId: "123456789012",
       startDate: "2026-01-15",
       endDate: "2026-02-03",
       totalCost,
-      costsByService: manyServices,
+      costsByResource: manyResources,
     });
 
     await handler(validPayload);
 
-    // Verify actual CSV contains all 200 services using real generateCsv
+    // Verify actual CSV contains all 200 resources using real generateCsv
     const uploadCsvCall = mockUploadCsv.mock.calls[0];
     const actualCsv = uploadCsvCall[2] as string;
     const csvLines = actualCsv.split('\n');
-    expect(csvLines.length).toBe(201); // Header + 200 services
-    expect(csvLines[0]).toBe("Service,Cost");
-    expect(csvLines[1]).toContain("Service-0,");
-    expect(csvLines[200]).toContain("Service-199,");
+    expect(csvLines.length).toBe(201); // Header + 200 resources
+    expect(csvLines[0]).toBe("Resource Name,Service,Region,Cost");
+    expect(csvLines[1]).toContain("resource-0,");
+    expect(csvLines[200]).toContain("resource-199,");
 
     expect(mockEmitLeaseCostsGenerated).toHaveBeenCalledWith(
       "test-event-bus",
@@ -489,17 +429,17 @@ describe("cost-collector-handler", () => {
     );
   });
 
-  it("should properly escape CSV special characters in service names", async () => {
+  it("should properly escape CSV special characters in resource names", async () => {
     mockGetCostData.mockResolvedValue({
       accountId: "123456789012",
       startDate: "2026-01-15",
       endDate: "2026-02-03",
       totalCost: 200.25,
-      costsByService: [
-        { serviceName: 'Service, with comma', cost: 100.00 },
-        { serviceName: 'Service "with quotes"', cost: 50.15 },
-        { serviceName: 'Service\nwith newline', cost: 30.10 },
-        { serviceName: 'Normal Service', cost: 20.00 },
+      costsByResource: [
+        { resourceName: 'resource, with comma', serviceName: 'Service1', region: 'us-east-1', cost: '100.00' },
+        { resourceName: 'resource "with quotes"', serviceName: 'Service2', region: 'us-west-2', cost: '50.15' },
+        { resourceName: 'resource\nwith newline', serviceName: 'Service3', region: 'eu-west-1', cost: '30.10' },
+        { resourceName: 'Normal Resource', serviceName: 'Service4', region: 'ap-southeast-1', cost: '20.00' },
       ],
     });
 
@@ -509,14 +449,32 @@ describe("cost-collector-handler", () => {
     const uploadCsvCall = mockUploadCsv.mock.calls[0];
     const actualCsv = uploadCsvCall[2] as string;
 
-    // Service with comma should be quoted
-    expect(actualCsv).toContain('"Service, with comma",100.00');
-    // Service with quotes should have doubled quotes and be quoted
-    expect(actualCsv).toContain('"Service ""with quotes""",50.15');
-    // Service with newline should be quoted
-    expect(actualCsv).toContain('"Service\nwith newline",30.10');
-    // Normal service should not be quoted
-    expect(actualCsv).toContain('Normal Service,20.00');
+    // Resource with comma should be quoted
+    expect(actualCsv).toContain('"resource, with comma",Service1,us-east-1,100.00');
+    // Resource with quotes should have doubled quotes and be quoted
+    expect(actualCsv).toContain('"resource ""with quotes""",Service2,us-west-2,50.15');
+    // Resource with newline should be quoted
+    expect(actualCsv).toContain('"resource\nwith newline",Service3,eu-west-1,30.10');
+    // Normal resource should not be quoted
+    expect(actualCsv).toContain('Normal Resource,Service4,ap-southeast-1,20.00');
+  });
+
+  it("should emit ResourceCount metric instead of ServiceCount", async () => {
+    const { PutMetricDataCommand } = await import("@aws-sdk/client-cloudwatch");
+
+    await handler(validPayload);
+
+    // Verify ResourceCount metric is emitted
+    expect(PutMetricDataCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        MetricData: expect.arrayContaining([
+          expect.objectContaining({
+            MetricName: "ResourceCount",
+            Value: 2, // Two resources in mock data
+          }),
+        ]),
+      })
+    );
   });
 
   describe("Environment variable validation", () => {
@@ -527,7 +485,7 @@ describe("cost-collector-handler", () => {
         "arn:aws:iam::999999999999:role/CostExplorerRole"
       );
       vi.stubEnv("S3_BUCKET_NAME", "test-bucket");
-      vi.stubEnv("EVENT_BUS_NAME", "invalid@bus#name"); // Invalid characters @ and #
+      vi.stubEnv("EVENT_BUS_NAME", "invalid@bus#name");
       vi.stubEnv("BILLING_PADDING_HOURS", "8");
       vi.stubEnv("PRESIGNED_URL_EXPIRY_DAYS", "7");
       vi.stubEnv("SCHEDULER_GROUP", "isb-lease-costs");
@@ -548,7 +506,7 @@ describe("cost-collector-handler", () => {
         "arn:aws:iam::999999999999:role/CostExplorerRole"
       );
       vi.stubEnv("S3_BUCKET_NAME", "test-bucket");
-      vi.stubEnv("EVENT_BUS_NAME", "a".repeat(257)); // 257 characters exceeds AWS limit
+      vi.stubEnv("EVENT_BUS_NAME", "a".repeat(257));
       vi.stubEnv("BILLING_PADDING_HOURS", "8");
       vi.stubEnv("PRESIGNED_URL_EXPIRY_DAYS", "7");
       vi.stubEnv("SCHEDULER_GROUP", "isb-lease-costs");
@@ -569,7 +527,7 @@ describe("cost-collector-handler", () => {
         "arn:aws:iam::999999999999:role/CostExplorerRole"
       );
       vi.stubEnv("S3_BUCKET_NAME", "test-bucket");
-      vi.stubEnv("EVENT_BUS_NAME", "my-event.bus_name123"); // Valid characters
+      vi.stubEnv("EVENT_BUS_NAME", "my-event.bus_name123");
       vi.stubEnv("BILLING_PADDING_HOURS", "8");
       vi.stubEnv("PRESIGNED_URL_EXPIRY_DAYS", "7");
       vi.stubEnv("SCHEDULER_GROUP", "isb-lease-costs");
@@ -578,7 +536,6 @@ describe("cost-collector-handler", () => {
         "arn:aws:lambda:us-west-2:123456789012:function:isb-leases"
       );
 
-      // Should not throw
       const result = await import("./cost-collector-handler.js");
       expect(result).toBeDefined();
       expect(result.handler).toBeDefined();
@@ -591,7 +548,7 @@ describe("cost-collector-handler", () => {
         "arn:aws:iam::999999999999:role/CostExplorerRole"
       );
       vi.stubEnv("S3_BUCKET_NAME", "test-bucket");
-      vi.stubEnv("EVENT_BUS_NAME", "a".repeat(256)); // Exactly 256 characters
+      vi.stubEnv("EVENT_BUS_NAME", "a".repeat(256));
       vi.stubEnv("BILLING_PADDING_HOURS", "8");
       vi.stubEnv("PRESIGNED_URL_EXPIRY_DAYS", "7");
       vi.stubEnv("SCHEDULER_GROUP", "isb-lease-costs");
@@ -600,7 +557,6 @@ describe("cost-collector-handler", () => {
         "arn:aws:lambda:us-west-2:123456789012:function:isb-leases"
       );
 
-      // Should not throw
       const result = await import("./cost-collector-handler.js");
       expect(result).toBeDefined();
       expect(result.handler).toBeDefined();
@@ -613,7 +569,7 @@ describe("cost-collector-handler", () => {
         "arn:aws:iam::999999999999:role/CostExplorerRole"
       );
       vi.stubEnv("S3_BUCKET_NAME", "test-bucket");
-      vi.stubEnv("EVENT_BUS_NAME", ""); // Empty string
+      vi.stubEnv("EVENT_BUS_NAME", "");
       vi.stubEnv("BILLING_PADDING_HOURS", "8");
       vi.stubEnv("PRESIGNED_URL_EXPIRY_DAYS", "7");
       vi.stubEnv("SCHEDULER_GROUP", "isb-lease-costs");
@@ -622,7 +578,6 @@ describe("cost-collector-handler", () => {
         "arn:aws:lambda:us-west-2:123456789012:function:isb-leases"
       );
 
-      // requireEnv will catch this first
       await expect(async () => {
         await import("./cost-collector-handler.js");
       }).rejects.toThrow();
@@ -653,7 +608,6 @@ describe("cost-collector-handler", () => {
 
       await handler(validPayload);
 
-      // Verify logger was created with structured context
       expect(logger.createLogger).toHaveBeenCalledWith(
         expect.objectContaining({
           component: "CostCollectorLambda",
@@ -666,7 +620,6 @@ describe("cost-collector-handler", () => {
     it("should log start of cost collection", async () => {
       await handler(validPayload);
 
-      // Verify initial log entry
       expect(mockLogger.info).toHaveBeenCalledWith(
         "Starting cost collection",
         expect.objectContaining({
@@ -678,7 +631,6 @@ describe("cost-collector-handler", () => {
     it("should log lease details with duration", async () => {
       await handler(validPayload);
 
-      // Verify lease details are logged
       expect(mockLogger.info).toHaveBeenCalledWith(
         "Lease details",
         expect.objectContaining({
@@ -692,7 +644,6 @@ describe("cost-collector-handler", () => {
     it("should log billing window with padding information", async () => {
       await handler(validPayload);
 
-      // Verify billing window is logged with all context
       expect(mockLogger.info).toHaveBeenCalledWith(
         "Calculated billing window",
         expect.objectContaining({
@@ -705,17 +656,16 @@ describe("cost-collector-handler", () => {
       );
     });
 
-    it("should log Cost Explorer query results with cost summary", async () => {
+    it("should log Cost Explorer query results with resource count", async () => {
       await handler(validPayload);
 
-      // Verify Cost Explorer results are logged
       expect(mockLogger.info).toHaveBeenCalledWith(
         "Completed Cost Explorer query",
         expect.objectContaining({
           elapsedSeconds: expect.any(Number),
           totalCost: expect.any(Number),
           currency: "USD",
-          serviceCount: expect.any(Number),
+          resourceCount: expect.any(Number),
         })
       );
     });
@@ -723,7 +673,6 @@ describe("cost-collector-handler", () => {
     it("should log S3 upload with integrity verification details", async () => {
       await handler(validPayload);
 
-      // Verify S3 upload is logged with eTag and checksum
       expect(mockLogger.info).toHaveBeenCalledWith(
         "Uploaded CSV to S3",
         expect.objectContaining({
@@ -739,7 +688,6 @@ describe("cost-collector-handler", () => {
     it("should log event emission", async () => {
       await handler(validPayload);
 
-      // Verify event emission is logged
       expect(mockLogger.info).toHaveBeenCalledWith(
         "Emitted LeaseCostsGenerated event",
         expect.objectContaining({
@@ -751,7 +699,6 @@ describe("cost-collector-handler", () => {
     it("should log completion with total elapsed time", async () => {
       await handler(validPayload);
 
-      // Verify completion log
       expect(mockLogger.info).toHaveBeenCalledWith(
         "Cost collection completed",
         expect.objectContaining({
@@ -763,7 +710,6 @@ describe("cost-collector-handler", () => {
     it("should log all major operations in sequence", async () => {
       await handler(validPayload);
 
-      // Verify all key operations are logged in order
       const logMessages = mockLogger.info.mock.calls.map((call) => call[0]);
       expect(logMessages).toEqual([
         "Starting cost collection",
@@ -783,7 +729,6 @@ describe("cost-collector-handler", () => {
     it("should include elapsed time in progress logs", async () => {
       await handler(validPayload);
 
-      // Verify that logs tracking operation completion include elapsedSeconds
       const logsWithElapsedTime = [
         "Starting cost collection",
         "Retrieved lease details from ISB API",
@@ -808,12 +753,10 @@ describe("cost-collector-handler", () => {
     it("should track elapsed time progression across operations", async () => {
       await handler(validPayload);
 
-      // Extract elapsed times from progress logs
       const elapsedTimes = mockLogger.info.mock.calls
         .filter((call) => call[1]?.elapsedSeconds !== undefined)
         .map((call) => call[1].elapsedSeconds as number);
 
-      // Verify elapsed times are non-decreasing (time moves forward)
       for (let i = 1; i < elapsedTimes.length; i++) {
         expect(elapsedTimes[i]).toBeGreaterThanOrEqual(elapsedTimes[i - 1]);
       }
@@ -822,13 +765,25 @@ describe("cost-collector-handler", () => {
     it("should log schedule deletion (or auto-deletion confirmation)", async () => {
       await handler(validPayload);
 
-      // Verify schedule deletion is logged (could be deleted or already deleted)
       const scheduleLog = mockLogger.info.mock.calls.find(
         (call) =>
           call[0] === "Deleted schedule" ||
           call[0] === "Schedule already deleted (auto-deleted after execution)"
       );
       expect(scheduleLog).toBeDefined();
+    });
+
+    it("should log CloudWatch metrics with resourceCount", async () => {
+      await handler(validPayload);
+
+      expect(mockLogger.info).toHaveBeenCalledWith(
+        "Emitted CloudWatch business metrics",
+        expect.objectContaining({
+          totalCost: expect.any(Number),
+          resourceCount: expect.any(Number),
+          processingDuration: expect.any(Number),
+        })
+      );
     });
   });
 });
