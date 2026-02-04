@@ -1,9 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { parse } from "csv-parse/sync";
-import { generateCsv } from "./csv-generator.js";
-import type { CostReport } from "../types.js";
+import { generateCsv, generateCsvWithResources } from "./csv-generator.js";
+import type { CostReport, CostReportWithResources } from "../types.js";
 
 type CsvRecord = { Service: string; Cost: string };
+type ResourceCsvRecord = { "Resource Name": string; Service: string; Region: string; Cost: string };
 
 describe("generateCsv", () => {
   it("should generate CSV with header and services in order", () => {
@@ -567,6 +568,283 @@ describe("generateCsv", () => {
       }) as CsvRecord[];
       expect(records[0].Service).toBe("");
       expect(records[0].Cost).toBe("12.34");
+    });
+  });
+});
+
+describe("generateCsvWithResources", () => {
+  it("should generate CSV with header and resources in order", () => {
+    const report: CostReportWithResources = {
+      accountId: "123456789012",
+      startDate: "2026-01-21",
+      endDate: "2026-02-04",
+      totalCost: 150.0,
+      costsByService: [{ serviceName: "Amazon EC2", cost: 150.0 }],
+      costsByResource: [
+        { resourceId: "i-abc123", resourceName: "web-server-1", serviceName: "Amazon EC2", region: "us-east-1", cost: 100.0 },
+        { resourceId: "i-def456", resourceName: "db-server-1", serviceName: "Amazon EC2", region: "us-west-2", cost: 50.0 },
+      ],
+    };
+
+    const csv = generateCsvWithResources(report);
+    const lines = csv.split("\n");
+
+    expect(lines[0]).toBe("Resource Name,Service,Region,Cost");
+    expect(lines[1]).toBe("web-server-1,Amazon EC2,us-east-1,100");
+    expect(lines[2]).toBe("db-server-1,Amazon EC2,us-west-2,50");
+    expect(lines.length).toBe(3);
+  });
+
+  it("should return header only for empty costsByResource", () => {
+    const report: CostReportWithResources = {
+      accountId: "123456789012",
+      startDate: "2026-01-21",
+      endDate: "2026-02-04",
+      totalCost: 0,
+      costsByService: [],
+      costsByResource: [],
+    };
+
+    const csv = generateCsvWithResources(report);
+    expect(csv).toBe("Resource Name,Service,Region,Cost");
+  });
+
+  it("should escape resource names with commas", () => {
+    const report: CostReportWithResources = {
+      accountId: "123456789012",
+      startDate: "2026-01-21",
+      endDate: "2026-02-04",
+      totalCost: 25.0,
+      costsByService: [{ serviceName: "Amazon EC2", cost: 25.0 }],
+      costsByResource: [
+        { resourceId: "i-abc123", resourceName: "Server, Production", serviceName: "Amazon EC2", region: "us-east-1", cost: 25.0 },
+      ],
+    };
+
+    const csv = generateCsvWithResources(report);
+    const lines = csv.split("\n");
+
+    expect(lines[1]).toBe('"Server, Production",Amazon EC2,us-east-1,25');
+  });
+
+  it("should escape resource names with quotes", () => {
+    const report: CostReportWithResources = {
+      accountId: "123456789012",
+      startDate: "2026-01-21",
+      endDate: "2026-02-04",
+      totalCost: 30.0,
+      costsByService: [{ serviceName: "Amazon EC2", cost: 30.0 }],
+      costsByResource: [
+        { resourceId: "i-abc123", resourceName: 'Server "Pro"', serviceName: "Amazon EC2", region: "us-east-1", cost: 30.0 },
+      ],
+    };
+
+    const csv = generateCsvWithResources(report);
+    const lines = csv.split("\n");
+
+    expect(lines[1]).toBe('"Server ""Pro""",Amazon EC2,us-east-1,30');
+  });
+
+  it("should preserve full precision for costs", () => {
+    const report: CostReportWithResources = {
+      accountId: "123456789012",
+      startDate: "2026-01-21",
+      endDate: "2026-02-04",
+      totalCost: 0.0000000029,
+      costsByService: [{ serviceName: "Amazon EC2", cost: 0.0000000029 }],
+      costsByResource: [
+        { resourceId: "i-abc123", resourceName: "server-1", serviceName: "Amazon EC2", region: "us-east-1", cost: 0.0000000029 },
+      ],
+    };
+
+    const csv = generateCsvWithResources(report);
+    const lines = csv.split("\n");
+
+    expect(lines[1]).toBe("server-1,Amazon EC2,us-east-1,0.0000000029");
+  });
+
+  it("should remove trailing zeros from costs", () => {
+    const report: CostReportWithResources = {
+      accountId: "123456789012",
+      startDate: "2026-01-21",
+      endDate: "2026-02-04",
+      totalCost: 10.5,
+      costsByService: [{ serviceName: "Amazon EC2", cost: 10.5 }],
+      costsByResource: [
+        { resourceId: "i-abc123", resourceName: "server-1", serviceName: "Amazon EC2", region: "us-east-1", cost: 10.5 },
+      ],
+    };
+
+    const csv = generateCsvWithResources(report);
+    const lines = csv.split("\n");
+
+    expect(lines[1]).toBe("server-1,Amazon EC2,us-east-1,10.5");
+  });
+
+  describe("CSV roundtrip validation", () => {
+    it("should generate CSV that can be parsed back correctly", () => {
+      const report: CostReportWithResources = {
+        accountId: "123456789012",
+        startDate: "2026-01-21",
+        endDate: "2026-02-04",
+        totalCost: 150.5,
+        costsByService: [{ serviceName: "Amazon EC2", cost: 150.5 }],
+        costsByResource: [
+          { resourceId: "i-abc123", resourceName: "web-server", serviceName: "Amazon EC2", region: "us-east-1", cost: 100.0 },
+          { resourceId: "i-def456", resourceName: "Server, with comma", serviceName: "Amazon EC2", region: "us-west-2", cost: 50.5 },
+        ],
+      };
+
+      const csv = generateCsvWithResources(report);
+      const records = parse(csv, { columns: true, skip_empty_lines: true }) as ResourceCsvRecord[];
+
+      expect(records).toHaveLength(2);
+      expect(records[0]["Resource Name"]).toBe("web-server");
+      expect(records[0].Service).toBe("Amazon EC2");
+      expect(records[0].Region).toBe("us-east-1");
+      expect(records[0].Cost).toBe("100");
+      expect(records[1]["Resource Name"]).toBe("Server, with comma");
+      expect(records[1].Cost).toBe("50.5");
+    });
+
+    it("should roundtrip all special characters combined", () => {
+      const report: CostReportWithResources = {
+        accountId: "123456789012",
+        startDate: "2026-01-21",
+        endDate: "2026-02-04",
+        totalCost: 45.0,
+        costsByService: [{ serviceName: "Amazon EC2", cost: 45.0 }],
+        costsByResource: [
+          { resourceId: "i-abc123", resourceName: 'Server "Pro", Type\nA', serviceName: "Amazon EC2", region: "us-east-1", cost: 45.0 },
+        ],
+      };
+
+      const csv = generateCsvWithResources(report);
+      const records = parse(csv, { columns: true, skip_empty_lines: true }) as ResourceCsvRecord[];
+
+      expect(records).toHaveLength(1);
+      expect(records[0]["Resource Name"]).toBe('Server "Pro", Type\nA');
+      expect(records[0].Cost).toBe("45");
+    });
+
+    it("should be RFC 4180 compliant in strict mode", () => {
+      const report: CostReportWithResources = {
+        accountId: "123456789012",
+        startDate: "2026-01-21",
+        endDate: "2026-02-04",
+        totalCost: 150.0,
+        costsByService: [{ serviceName: "Amazon EC2", cost: 150.0 }],
+        costsByResource: [
+          { resourceId: "i-abc123", resourceName: "web-server-1", serviceName: "Amazon EC2", region: "us-east-1", cost: 100.0 },
+          { resourceId: "i-def456", resourceName: "web-server-2", serviceName: "Amazon EC2", region: "us-west-2", cost: 50.0 },
+        ],
+      };
+
+      const csv = generateCsvWithResources(report);
+
+      // RFC 4180 strict mode parsing should succeed
+      const records = parse(csv, {
+        columns: true,
+        skip_empty_lines: true,
+        relax_column_count: false,
+        relax_quotes: false,
+      }) as ResourceCsvRecord[];
+
+      expect(records).toHaveLength(2);
+      expect(records[0]).toEqual({
+        "Resource Name": "web-server-1",
+        Service: "Amazon EC2",
+        Region: "us-east-1",
+        Cost: "100",
+      });
+    });
+  });
+
+  describe("edge cases", () => {
+    it("should handle resource IDs as names (no friendly name)", () => {
+      const report: CostReportWithResources = {
+        accountId: "123456789012",
+        startDate: "2026-01-21",
+        endDate: "2026-02-04",
+        totalCost: 50.0,
+        costsByService: [{ serviceName: "Amazon EC2", cost: 50.0 }],
+        costsByResource: [
+          {
+            resourceId: "arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0",
+            resourceName: "arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0",
+            serviceName: "Amazon EC2",
+            region: "us-east-1",
+            cost: 50.0,
+          },
+        ],
+      };
+
+      const csv = generateCsvWithResources(report);
+      const records = parse(csv, { columns: true, skip_empty_lines: true }) as ResourceCsvRecord[];
+
+      expect(records[0]["Resource Name"]).toBe("arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0");
+    });
+
+    it("should handle large number of resources (200+)", () => {
+      const costsByResource = Array.from({ length: 250 }, (_, i) => ({
+        resourceId: `i-${i.toString().padStart(8, '0')}`,
+        resourceName: `server-${i + 1}`,
+        serviceName: "Amazon EC2",
+        region: i % 2 === 0 ? "us-east-1" : "us-west-2",
+        cost: (i + 1) * 10.5,
+      }));
+
+      const report: CostReportWithResources = {
+        accountId: "123456789012",
+        startDate: "2026-01-21",
+        endDate: "2026-02-04",
+        totalCost: costsByResource.reduce((sum, r) => sum + r.cost, 0),
+        costsByService: [{ serviceName: "Amazon EC2", cost: costsByResource.reduce((sum, r) => sum + r.cost, 0) }],
+        costsByResource,
+      };
+
+      const csv = generateCsvWithResources(report);
+      const records = parse(csv, { columns: true, skip_empty_lines: true }) as ResourceCsvRecord[];
+
+      expect(records).toHaveLength(250);
+      expect(records[0]["Resource Name"]).toBe("server-1");
+      expect(records[249]["Resource Name"]).toBe("server-250");
+    });
+
+    it("should handle global region (non-ARN resources)", () => {
+      const report: CostReportWithResources = {
+        accountId: "123456789012",
+        startDate: "2026-01-21",
+        endDate: "2026-02-04",
+        totalCost: 25.0,
+        costsByService: [{ serviceName: "Amazon EC2", cost: 25.0 }],
+        costsByResource: [
+          { resourceId: "i-abc123", resourceName: "server-1", serviceName: "Amazon EC2", region: "global", cost: 25.0 },
+        ],
+      };
+
+      const csv = generateCsvWithResources(report);
+      const lines = csv.split("\n");
+
+      expect(lines[1]).toBe("server-1,Amazon EC2,global,25");
+    });
+
+    it("should handle global region (IAM resources)", () => {
+      const report: CostReportWithResources = {
+        accountId: "123456789012",
+        startDate: "2026-01-21",
+        endDate: "2026-02-04",
+        totalCost: 10.0,
+        costsByService: [{ serviceName: "AWS IAM", cost: 10.0 }],
+        costsByResource: [
+          { resourceId: "arn:aws:iam::123456789012:role/MyRole", resourceName: "MyRole", serviceName: "AWS IAM", region: "global", cost: 10.0 },
+        ],
+      };
+
+      const csv = generateCsvWithResources(report);
+      const lines = csv.split("\n");
+
+      expect(lines[1]).toBe("MyRole,AWS IAM,global,10");
     });
   });
 });

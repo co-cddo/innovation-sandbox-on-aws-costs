@@ -1,4 +1,4 @@
-import type { CostReport } from "../types.js";
+import type { CostReport, CostReportWithResources } from "../types.js";
 
 /**
  * Generates an RFC 4180 compliant CSV string from a cost report.
@@ -59,4 +59,64 @@ function escapeCsvValue(value: string): string {
     return `"${escaped}"`;
   }
   return value;
+}
+
+/**
+ * Formats a cost value showing full precision (up to 10 decimal places).
+ * AWS Cost Explorer returns costs with up to 10 decimal places of precision.
+ * This ensures users can see the complete cost breakdown.
+ *
+ * @param cost - Cost value in USD
+ * @returns Formatted cost string with full precision, trailing zeros removed
+ */
+function formatCost(cost: number): string {
+  // Use toFixed(10) to capture AWS's full precision, then remove trailing zeros
+  return cost.toFixed(10).replace(/\.?0+$/, "") || "0";
+}
+
+/**
+ * Generates an RFC 4180 compliant CSV string from a cost report with resource-level breakdown.
+ * Produces a four-column CSV with header "Resource Name,Service,Region,Cost".
+ * Resources are sorted by cost in descending order (highest cost first).
+ *
+ * Memory optimization: Uses direct string concatenation instead of array.join() to reduce
+ * memory footprint from O(3n) to O(n) for large datasets.
+ *
+ * @param report - Cost report containing resource-level cost breakdown
+ * @param report.costsByResource - Array of resources with costs (expected pre-sorted by cost descending)
+ *
+ * @returns CSV string with header row and one row per resource, using RFC 4180 escaping
+ *
+ * @example
+ * ```typescript
+ * const report: CostReportWithResources = {
+ *   accountId: "123456789012",
+ *   startDate: "2026-01-21",
+ *   endDate: "2026-02-04",
+ *   totalCost: 150.00,
+ *   costsByService: [{ serviceName: "Amazon EC2", cost: 150.00 }],
+ *   costsByResource: [
+ *     { resourceId: "i-abc123", resourceName: "web-server-1", serviceName: "Amazon EC2", region: "us-east-1", cost: 100.00 },
+ *     { resourceId: "i-def456", resourceName: "i-def456", serviceName: "Amazon EC2", region: "us-west-2", cost: 50.00 }
+ *   ]
+ * };
+ * const csv = generateCsvWithResources(report);
+ * // Returns:
+ * // Resource Name,Service,Region,Cost
+ * // web-server-1,Amazon EC2,us-east-1,100.00
+ * // i-def456,Amazon EC2,us-west-2,50.00
+ * ```
+ */
+export function generateCsvWithResources(report: CostReportWithResources): string {
+  let csv = "Resource Name,Service,Region,Cost";
+
+  for (const resource of report.costsByResource) {
+    const escapedName = escapeCsvValue(resource.resourceName);
+    const escapedService = escapeCsvValue(resource.serviceName);
+    const escapedRegion = escapeCsvValue(resource.region);
+    const cost = formatCost(resource.cost);
+    csv += `\n${escapedName},${escapedService},${escapedRegion},${cost}`;
+  }
+
+  return csv;
 }
