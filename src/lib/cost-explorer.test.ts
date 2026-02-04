@@ -17,7 +17,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { CostExplorerClient, GetCostAndUsageCommand } from "@aws-sdk/client-cost-explorer";
+import { CostExplorerClient, GetCostAndUsageCommand, GetCostAndUsageWithResourcesCommand } from "@aws-sdk/client-cost-explorer";
 
 // Mock Cost Explorer client
 vi.mock("@aws-sdk/client-cost-explorer", async () => {
@@ -813,6 +813,344 @@ describe("cost-explorer", () => {
 
         consoleWarnSpy.mockRestore();
       });
+    });
+  });
+
+  describe("getCostDataWithResources", () => {
+    it("should return resource-level costs from single page response", async () => {
+      mockSend.mockResolvedValue({
+        ResultsByTime: [
+          {
+            Groups: [
+              {
+                Keys: ["arn:aws:ec2:us-east-1:123456789012:instance/i-abc123"],
+                Metrics: { UnblendedCost: { Amount: "100.00" } },
+              },
+              {
+                Keys: ["arn:aws:ec2:us-west-2:123456789012:instance/i-def456"],
+                Metrics: { UnblendedCost: { Amount: "50.00" } },
+              },
+            ],
+          },
+        ],
+        DimensionValueAttributes: [
+          {
+            Value: "arn:aws:ec2:us-east-1:123456789012:instance/i-abc123",
+            Attributes: { resource_name: "web-server-1" },
+          },
+        ],
+      });
+
+      const { getCostDataWithResources } = await import("./cost-explorer.js");
+      const result = await getCostDataWithResources({
+        accountId: "123456789012",
+        startTime: "2026-01-21",
+        endTime: "2026-02-04",
+      });
+
+      expect(result.totalCost).toBe(150);
+      expect(result.costsByResource).toHaveLength(2);
+
+      // Should be sorted by cost descending
+      expect(result.costsByResource[0].cost).toBe(100);
+      expect(result.costsByResource[0].resourceName).toBe("web-server-1");
+      expect(result.costsByResource[0].region).toBe("us-east-1");
+
+      expect(result.costsByResource[1].cost).toBe(50);
+      // No friendly name provided, should fall back to resource ID
+      expect(result.costsByResource[1].resourceName).toBe("arn:aws:ec2:us-west-2:123456789012:instance/i-def456");
+      expect(result.costsByResource[1].region).toBe("us-west-2");
+    });
+
+    it("should throw error when time period exceeds 14 days", async () => {
+      const { getCostDataWithResources } = await import("./cost-explorer.js");
+
+      await expect(
+        getCostDataWithResources({
+          accountId: "123456789012",
+          startTime: "2026-01-01",
+          endTime: "2026-01-20", // 19 days
+        })
+      ).rejects.toThrow("Time period exceeds 14-day limit");
+    });
+
+    it("should accept exactly 14 days", async () => {
+      mockSend.mockResolvedValue({
+        ResultsByTime: [],
+        DimensionValueAttributes: [],
+      });
+
+      const { getCostDataWithResources } = await import("./cost-explorer.js");
+      const result = await getCostDataWithResources({
+        accountId: "123456789012",
+        startTime: "2026-01-21",
+        endTime: "2026-02-04", // Exactly 14 days
+      });
+
+      expect(result.totalCost).toBe(0);
+      expect(result.costsByResource).toHaveLength(0);
+    });
+
+    it("should use SERVICE filter in API request", async () => {
+      mockSend.mockResolvedValue({
+        ResultsByTime: [],
+        DimensionValueAttributes: [],
+      });
+
+      const { getCostDataWithResources, DEFAULT_RESOURCE_SERVICE } = await import("./cost-explorer.js");
+      await getCostDataWithResources({
+        accountId: "123456789012",
+        startTime: "2026-01-21",
+        endTime: "2026-02-04",
+      });
+
+      const command = mockSend.mock.calls[0][0];
+      expect(command).toBeInstanceOf(GetCostAndUsageWithResourcesCommand);
+
+      // Verify SERVICE filter is included
+      const filter = command.input.Filter;
+      expect(filter.And).toBeDefined();
+      const serviceFilter = filter.And.find(
+        (f: any) => f.Dimensions?.Key === "SERVICE"
+      );
+      expect(serviceFilter.Dimensions.Values).toEqual([DEFAULT_RESOURCE_SERVICE]);
+    });
+
+    it("should use custom service filter when provided", async () => {
+      mockSend.mockResolvedValue({
+        ResultsByTime: [],
+        DimensionValueAttributes: [],
+      });
+
+      const { getCostDataWithResources } = await import("./cost-explorer.js");
+      await getCostDataWithResources({
+        accountId: "123456789012",
+        startTime: "2026-01-21",
+        endTime: "2026-02-04",
+        serviceFilter: "Amazon Simple Storage Service",
+      });
+
+      const command = mockSend.mock.calls[0][0];
+      const filter = command.input.Filter;
+      const serviceFilter = filter.And.find(
+        (f: any) => f.Dimensions?.Key === "SERVICE"
+      );
+      expect(serviceFilter.Dimensions.Values).toEqual(["Amazon Simple Storage Service"]);
+    });
+
+    it("should group by RESOURCE_ID in API request", async () => {
+      mockSend.mockResolvedValue({
+        ResultsByTime: [],
+        DimensionValueAttributes: [],
+      });
+
+      const { getCostDataWithResources } = await import("./cost-explorer.js");
+      await getCostDataWithResources({
+        accountId: "123456789012",
+        startTime: "2026-01-21",
+        endTime: "2026-02-04",
+      });
+
+      const command = mockSend.mock.calls[0][0];
+      expect(command.input.GroupBy).toEqual([
+        {
+          Type: "DIMENSION",
+          Key: "RESOURCE_ID",
+        },
+      ]);
+    });
+
+    it("should handle pagination and aggregate same resource across pages", async () => {
+      // First page
+      mockSend.mockResolvedValueOnce({
+        ResultsByTime: [
+          {
+            Groups: [
+              {
+                Keys: ["arn:aws:ec2:us-east-1:123456789012:instance/i-abc123"],
+                Metrics: { UnblendedCost: { Amount: "50.00" } },
+              },
+            ],
+          },
+        ],
+        DimensionValueAttributes: [
+          {
+            Value: "arn:aws:ec2:us-east-1:123456789012:instance/i-abc123",
+            Attributes: { resource_name: "web-server-1" },
+          },
+        ],
+        NextPageToken: "page-2-token",
+      });
+
+      // Second page - same resource
+      mockSend.mockResolvedValueOnce({
+        ResultsByTime: [
+          {
+            Groups: [
+              {
+                Keys: ["arn:aws:ec2:us-east-1:123456789012:instance/i-abc123"],
+                Metrics: { UnblendedCost: { Amount: "50.00" } },
+              },
+            ],
+          },
+        ],
+        DimensionValueAttributes: [],
+      });
+
+      const { getCostDataWithResources } = await import("./cost-explorer.js");
+      const result = await getCostDataWithResources({
+        accountId: "123456789012",
+        startTime: "2026-01-21",
+        endTime: "2026-02-04",
+      });
+
+      expect(mockSend).toHaveBeenCalledTimes(2);
+      expect(result.totalCost).toBe(100);
+      expect(result.costsByResource).toHaveLength(1);
+      expect(result.costsByResource[0].cost).toBe(100);
+      expect(result.costsByResource[0].resourceName).toBe("web-server-1");
+    });
+
+    it("should extract region from ARN", async () => {
+      mockSend.mockResolvedValue({
+        ResultsByTime: [
+          {
+            Groups: [
+              {
+                Keys: ["arn:aws:ec2:eu-west-1:123456789012:instance/i-xyz789"],
+                Metrics: { UnblendedCost: { Amount: "75.00" } },
+              },
+            ],
+          },
+        ],
+        DimensionValueAttributes: [],
+      });
+
+      const { getCostDataWithResources } = await import("./cost-explorer.js");
+      const result = await getCostDataWithResources({
+        accountId: "123456789012",
+        startTime: "2026-01-21",
+        endTime: "2026-02-04",
+      });
+
+      expect(result.costsByResource[0].region).toBe("eu-west-1");
+    });
+
+    it("should handle global resources (empty region in ARN)", async () => {
+      mockSend.mockResolvedValue({
+        ResultsByTime: [
+          {
+            Groups: [
+              {
+                // IAM resources have empty region
+                Keys: ["arn:aws:iam::123456789012:role/MyRole"],
+                Metrics: { UnblendedCost: { Amount: "10.00" } },
+              },
+            ],
+          },
+        ],
+        DimensionValueAttributes: [],
+      });
+
+      const { getCostDataWithResources } = await import("./cost-explorer.js");
+      const result = await getCostDataWithResources({
+        accountId: "123456789012",
+        startTime: "2026-01-21",
+        endTime: "2026-02-04",
+      });
+
+      expect(result.costsByResource[0].region).toBe("global");
+    });
+
+    it("should also populate costsByService for compatibility", async () => {
+      mockSend.mockResolvedValue({
+        ResultsByTime: [
+          {
+            Groups: [
+              {
+                Keys: ["arn:aws:ec2:us-east-1:123456789012:instance/i-abc123"],
+                Metrics: { UnblendedCost: { Amount: "100.00" } },
+              },
+            ],
+          },
+        ],
+        DimensionValueAttributes: [],
+      });
+
+      const { getCostDataWithResources, DEFAULT_RESOURCE_SERVICE } = await import("./cost-explorer.js");
+      const result = await getCostDataWithResources({
+        accountId: "123456789012",
+        startTime: "2026-01-21",
+        endTime: "2026-02-04",
+      });
+
+      expect(result.costsByService).toHaveLength(1);
+      expect(result.costsByService[0].serviceName).toBe(DEFAULT_RESOURCE_SERVICE);
+      expect(result.costsByService[0].cost).toBe(100);
+    });
+
+    it("should maintain precision with many small amounts", async () => {
+      const pages = 10;
+
+      for (let i = 0; i < pages; i++) {
+        mockSend.mockResolvedValueOnce({
+          ResultsByTime: [
+            {
+              Groups: [
+                {
+                  Keys: ["arn:aws:ec2:us-east-1:123456789012:instance/i-abc123"],
+                  Metrics: { UnblendedCost: { Amount: "0.10" } },
+                },
+              ],
+            },
+          ],
+          DimensionValueAttributes: [],
+          NextPageToken: i < pages - 1 ? `page-${i + 2}` : undefined,
+        });
+      }
+
+      const { getCostDataWithResources } = await import("./cost-explorer.js");
+      const result = await getCostDataWithResources({
+        accountId: "123456789012",
+        startTime: "2026-01-21",
+        endTime: "2026-02-04",
+      });
+
+      // 10 pages × $0.10 ≈ $1.00 (floating-point arithmetic, full precision preserved)
+      expect(result.totalCost).toBeCloseTo(1.00, 10);
+      expect(result.costsByResource[0].cost).toBeCloseTo(1.00, 10);
+    });
+
+    it("should throw on API error", async () => {
+      mockSend.mockRejectedValue(new Error("Resource-level data not available"));
+
+      const { getCostDataWithResources } = await import("./cost-explorer.js");
+
+      await expect(
+        getCostDataWithResources({
+          accountId: "123456789012",
+          startTime: "2026-01-21",
+          endTime: "2026-02-04",
+        })
+      ).rejects.toThrow("Resource-level data not available");
+    });
+
+    it("should return empty costsByResource for no results", async () => {
+      mockSend.mockResolvedValue({
+        ResultsByTime: [],
+        DimensionValueAttributes: [],
+      });
+
+      const { getCostDataWithResources } = await import("./cost-explorer.js");
+      const result = await getCostDataWithResources({
+        accountId: "123456789012",
+        startTime: "2026-01-21",
+        endTime: "2026-02-04",
+      });
+
+      expect(result.totalCost).toBe(0);
+      expect(result.costsByResource).toHaveLength(0);
+      expect(result.costsByService).toHaveLength(0);
     });
   });
 });

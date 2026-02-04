@@ -253,7 +253,7 @@ exports[`CostCollectorFunction > snapshot > should match snapshot 1`] = `
         ],
         "Code": {
           "S3Bucket": "cdk-hnb659fds-assets-123456789012-us-west-2",
-          "S3Key": "ea6af8fe0138fef0ae4122cfd6fcb7fb4bda92494c65b408337cbc4d0cfe9403.zip",
+          "S3Key": "4351de16273a78b2337c4b6c810921d10349725ba92900b0e67b4edd34724bea.zip",
         },
         "DeadLetterConfig": {
           "TargetArn": {
@@ -554,7 +554,7 @@ exports[`CostCollectorFunction > snapshot > should match snapshot 1`] = `
         ],
         "Code": {
           "S3Bucket": "cdk-hnb659fds-assets-123456789012-us-west-2",
-          "S3Key": "83577641e1ce529ff2861b8a78f5953226bd340cb7c046f3b62cb446c725c2a3.zip",
+          "S3Key": "ae8876bea40c8787dc73b260b5c018287a1bf4d1ba8b176152b95cf3c7cc4e75.zip",
         },
         "Environment": {
           "Variables": {
