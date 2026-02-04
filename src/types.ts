@@ -1,6 +1,8 @@
-export interface CostByService {
+export interface CostByResource {
+  resourceName: string;  // ARN, name, or fallback text
   serviceName: string;
-  cost: number;
+  region: string;        // "global" for region-less costs
+  cost: string;          // Full precision string from AWS
 }
 
 export interface CostReport {
@@ -8,7 +10,7 @@ export interface CostReport {
   startDate: string;
   endDate: string;
   totalCost: number;
-  costsByService: CostByService[];
+  costsByResource: CostByResource[];
 }
 
 export interface CliOptions {

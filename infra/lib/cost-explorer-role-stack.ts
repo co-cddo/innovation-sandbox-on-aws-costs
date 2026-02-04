@@ -50,11 +50,13 @@ export class CostExplorerRoleStack extends cdk.Stack {
     });
 
     // Add Cost Explorer read permissions
+    // GetCostAndUsage: service-level cost aggregation
+    // GetCostAndUsageWithResources: resource-level cost breakdown (requires org-level opt-in)
     costExplorerRole.addToPolicy(
       new iam.PolicyStatement({
         sid: "CostExplorerRead",
         effect: iam.Effect.ALLOW,
-        actions: ["ce:GetCostAndUsage"],
+        actions: ["ce:GetCostAndUsage", "ce:GetCostAndUsageWithResources"],
         resources: ["*"],
       })
     );

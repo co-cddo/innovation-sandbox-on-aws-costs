@@ -1733,23 +1733,78 @@ For detailed testing documentation, see [docs/TESTING.md](./docs/TESTING.md).
 
 ## CSV Output Format
 
+> **Breaking Change (v2.0.0)**: The CSV format changed from 2 columns (`Service,Cost`) to 4 columns (`Resource Name,Service,Region,Cost`) with full decimal precision. See [Migration Guide](#csv-format-migration) below.
+
 The generated CSV files follow **[RFC 4180](https://datatracker.ietf.org/doc/html/rfc4180)** (Common Format and MIME Type for Comma-Separated Values) with these characteristics:
 
-- **Header row**: `Service,Cost`
-- **Data rows**: One row per AWS service, sorted by cost descending
-- **Cost format**: Two decimal places (e.g., `123.45`)
+- **Header row**: `Resource Name,Service,Region,Cost`
+- **Data rows**: One row per AWS resource, sorted by service total cost (descending), then resource cost within service (descending)
+- **Cost format**: Full precision from AWS Cost Explorer (e.g., `0.0000005793` - not rounded)
 - **Escaping**: Values containing commas, quotes, or newlines are wrapped in double quotes
 - **Quote escaping**: Internal quotes are doubled (e.g., `"Service ""Pro""",100.00`)
-- **Line endings**: CRLF (`\r\n`) per RFC 4180 specification
+- **Line endings**: LF (`\n`) for Unix compatibility
 - **Character encoding**: UTF-8
+- **CSV injection protection**: Formula trigger characters (`=`, `+`, `-`, `@`, `|`, `%`) are prefixed with single quote
 
 ### Example Output
 
 ```csv
+Resource Name,Service,Region,Cost
+i-1234567890abcdef0,Amazon Elastic Compute Cloud - Compute,us-east-1,1234.5600000000
+my-bucket,Amazon Simple Storage Service,us-west-2,567.8900000000
+No resource breakdown available for this service type,AWS Lambda,global,12.3400000000
+```
+
+### Special Resource Name Values
+
+| Resource Name | Meaning |
+|---------------|---------|
+| ARN or resource ID | Standard resource with cost data |
+| `No resource breakdown available for this service type` | Service doesn't support resource-level granularity (e.g., GuardDuty) |
+| `No resource breakdown available for this time window` | Costs from period beyond 14-day lookback limit |
+
+### CSV Format Migration
+
+If you're migrating from the previous 2-column format:
+
+**Old Format (v1.x):**
+```csv
 Service,Cost
-Amazon Elastic Compute Cloud - Compute,1234.56
-Amazon Simple Storage Service,567.89
-AWS Lambda,12.34
+Amazon EC2,1234.56
+Amazon S3,567.89
+```
+
+**New Format (v2.0.0+):**
+```csv
+Resource Name,Service,Region,Cost
+i-1234567890abcdef0,Amazon EC2,us-east-1,1234.5600000000
+my-bucket,Amazon S3,us-west-2,567.8900000000
+```
+
+**TypeScript Migration:**
+```typescript
+// OLD (v1.x)
+interface OldCostRecord {
+  Service: string;
+  Cost: string;
+}
+
+// NEW (v2.0.0+)
+interface CostRecord {
+  'Resource Name': string;
+  Service: string;
+  Region: string;
+  Cost: string;
+}
+
+// Parse new format
+const records = parse(csvContent, { columns: true }) as CostRecord[];
+
+// Aggregate by service (for backward compatibility)
+const byService = records.reduce((acc, r) => {
+  acc[r.Service] = (acc[r.Service] || 0) + parseFloat(r.Cost);
+  return acc;
+}, {} as Record<string, number>);
 ```
 
 ### Edge Cases
@@ -1758,14 +1813,15 @@ The CSV generator handles these edge cases per RFC 4180:
 
 | Scenario | Example Input | CSV Output | Explanation |
 |----------|---------------|------------|-------------|
-| **Empty service name** | `serviceName: ""` | `,123.45` | Empty string is valid, no quotes needed |
-| **Commas in name** | `serviceName: "EC2, Compute"` | `"EC2, Compute",123.45` | Wrapped in quotes to preserve comma |
-| **Quotes in name** | `serviceName: 'Service "Pro"'` | `"Service ""Pro""",123.45` | Internal quotes are doubled |
-| **Newlines in name** | `serviceName: "Line1\nLine2"` | `"Line1\nLine2",123.45` | Wrapped in quotes, newline preserved |
-| **Leading/trailing spaces** | `serviceName: " EC2 "` | ` EC2 ,123.45` | Spaces preserved (not trimmed) |
-| **Zero cost** | `cost: 0.00` | `Amazon S3,0.00` | Zero is valid, always formatted with 2 decimals |
-| **Large cost** | `cost: 999999.99` | `Amazon EC2,999999.99` | No thousands separator (e.g., no commas) |
-| **Very small cost** | `cost: 0.01` | `AWS Lambda,0.01` | Minimum 2 decimal places |
+| **Empty resource name** | `resourceName: ""` | `,Service,us-east-1,123.45` | Empty string is valid |
+| **Commas in name** | `resourceName: "EC2, Compute"` | `"EC2, Compute",Service,...` | Wrapped in quotes |
+| **Quotes in name** | `resourceName: 'Res "Pro"'` | `"Res ""Pro""",Service,...` | Internal quotes doubled |
+| **Newlines in name** | `resourceName: "L1\nL2"` | `"L1\nL2",Service,...` | Wrapped in quotes |
+| **Formula injection** | `resourceName: "=cmd\|calc"` | `'=cmd\|calc,Service,...` | Prefixed with single quote |
+| **Zero cost** | `cost: "0"` | `resource,S3,us-east-1,0` | Zero is valid |
+| **Full precision** | `cost: "0.0000005793"` | `resource,Lambda,global,0.0000005793` | All decimals preserved |
+| **Large cost** | `cost: "999999.99"` | `resource,EC2,us-east-1,999999.99` | No thousands separator |
+| **Global region** | `region: "global"` | `resource,CloudFront,global,10.00` | For region-less services |
 
 ### RFC 4180 Conformance Testing
 
@@ -1818,15 +1874,15 @@ Expected output:
 
 #### Manual Validation Checklist
 
-- [ ] Header row is `Service,Cost`
-- [ ] All rows have exactly 2 fields (service name, cost)
-- [ ] Cost values have 2 decimal places (e.g., `123.45`)
+- [ ] Header row is `Resource Name,Service,Region,Cost`
+- [ ] All rows have exactly 4 fields
+- [ ] Cost values preserve full precision from AWS (not rounded)
 - [ ] Values with commas/quotes/newlines are quoted
 - [ ] Internal quotes are doubled (e.g., `""`)
-- [ ] Line endings are CRLF (`\r\n`)
+- [ ] Formula characters (`=+@-|%`) at start of values are prefixed with `'`
 - [ ] File is UTF-8 encoded
 - [ ] No trailing comma on any line
-- [ ] Empty service names are represented as empty string (not `null`)
+- [ ] Region values are AWS region codes (e.g., `us-east-1`) or `global`
 
 ### Testing CSV Generation
 
@@ -2524,6 +2580,46 @@ const segment = AWSXRay.getSegment();
 segment?.addAnnotation('leaseId', leaseId);
 segment?.addAnnotation('accountId', accountId);
 segment?.addAnnotation('totalCost', totalCost);
+```
+
+### CloudWatch Business Metrics
+
+> **Breaking Change (v2.0.0)**: The `ServiceCount` metric was renamed to `ResourceCount`. Update your dashboards and alarms accordingly.
+
+The Cost Collector Lambda emits custom business metrics to the `ISB/Costs` namespace:
+
+| Metric | Unit | Description |
+|--------|------|-------------|
+| `TotalCost` | None (USD) | Total cost for the billing period |
+| `ResourceCount` | Count | Number of resources (rows in CSV) |
+| `ProcessingDuration` | Seconds | Lambda execution time |
+
+**Query metrics via CLI:**
+```bash
+aws cloudwatch get-metric-statistics \
+  --namespace "ISB/Costs" \
+  --metric-name "ResourceCount" \
+  --start-time $(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ) \
+  --end-time $(date -u +%Y-%m-%dT%H:%M:%SZ) \
+  --period 3600 \
+  --statistics Average Maximum
+```
+
+**Migration from ServiceCount to ResourceCount:**
+```bash
+# Update CloudWatch alarms
+aws cloudwatch put-metric-alarm \
+  --alarm-name "HighResourceCount" \
+  --namespace "ISB/Costs" \
+  --metric-name "ResourceCount" \
+  --statistic Average \
+  --period 300 \
+  --evaluation-periods 1 \
+  --threshold 1000 \
+  --comparison-operator GreaterThanThreshold
+
+# Note: ResourceCount values will be higher than ServiceCount
+# (individual resources vs service aggregates)
 ```
 
 ### CloudWatch Alarms

@@ -43,7 +43,7 @@ const cloudWatchClient = new CloudWatchClient({});
  */
 async function emitBusinessMetrics(
   totalCost: number,
-  serviceCount: number,
+  resourceCount: number,
   processingDurationSeconds: number,
   accountId: string
 ): Promise<void> {
@@ -63,8 +63,8 @@ async function emitBusinessMetrics(
             ],
           },
           {
-            MetricName: "ServiceCount",
-            Value: serviceCount,
+            MetricName: "ResourceCount",
+            Value: resourceCount,
             Unit: "Count",
             Timestamp: new Date(),
             Dimensions: [
@@ -251,12 +251,12 @@ export async function handler(event: unknown): Promise<void> {
     );
     const elapsedAfterCostExplorer = Math.round((Date.now() - startTime) / 1000);
     costExplorerSubsegment?.addMetadata("totalCost", costReport.totalCost);
-    costExplorerSubsegment?.addMetadata("serviceCount", costReport.costsByService.length);
+    costExplorerSubsegment?.addMetadata("resourceCount", costReport.costsByResource.length);
     logger.info("Completed Cost Explorer query", {
       elapsedSeconds: elapsedAfterCostExplorer,
       totalCost: costReport.totalCost,
       currency: "USD",
-      serviceCount: costReport.costsByService.length,
+      resourceCount: costReport.costsByResource.length,
     });
     costExplorerSubsegment?.close();
   } catch (error) {
@@ -268,7 +268,7 @@ export async function handler(event: unknown): Promise<void> {
   const csvSubsegment = segment?.addNewSubsegment("CSV Generation");
   let csv;
   try {
-    csvSubsegment?.addMetadata("serviceCount", costReport.costsByService.length);
+    csvSubsegment?.addMetadata("resourceCount", costReport.costsByResource.length);
     csv = generateCsv(costReport);
     csvSubsegment?.addMetadata("csvSizeBytes", csv.length);
     csvSubsegment?.close();
@@ -339,13 +339,13 @@ export async function handler(event: unknown): Promise<void> {
   // 9. Emit custom CloudWatch metrics for business observability
   await emitBusinessMetrics(
     costReport.totalCost,
-    costReport.costsByService.length,
+    costReport.costsByResource.length,
     elapsedAfterEvent,
     accountId
   );
   logger.info("Emitted CloudWatch business metrics", {
     totalCost: costReport.totalCost,
-    serviceCount: costReport.costsByService.length,
+    resourceCount: costReport.costsByResource.length,
     processingDuration: elapsedAfterEvent,
   });
 

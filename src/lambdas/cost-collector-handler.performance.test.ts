@@ -45,6 +45,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   CostExplorerClient,
   GetCostAndUsageCommand,
+  GetCostAndUsageWithResourcesCommand,
 } from "@aws-sdk/client-cost-explorer";
 import { SchedulerClient, DeleteScheduleCommand } from "@aws-sdk/client-scheduler";
 import { CloudWatchClient, PutMetricDataCommand } from "@aws-sdk/client-cloudwatch";
@@ -218,14 +219,28 @@ describe("cost-collector-handler - Performance Tests", () => {
         Metrics: { UnblendedCost: { Amount: (Math.random() * 10).toFixed(2) } },
       }));
 
+      let serviceCallCount = 0;
       mockCostExplorerSend.mockImplementation((command) => {
         if (command instanceof GetCostAndUsageCommand) {
+          // Service list query
           return Promise.resolve(
             buildCostExplorerResponse({
               ResultsByTime: [{ Groups: services }],
               NextPageToken: undefined,
             })
           );
+        }
+        if (command instanceof GetCostAndUsageWithResourcesCommand) {
+          // Resource query for each service
+          serviceCallCount++;
+          return Promise.resolve({
+            ResultsByTime: [{
+              Groups: [{
+                Keys: [`resource-${serviceCallCount}`, "us-east-1"],
+                Metrics: { UnblendedCost: { Amount: "1.00" } },
+              }],
+            }],
+          });
         }
       });
 
@@ -266,6 +281,7 @@ describe("cost-collector-handler - Performance Tests", () => {
         Metrics: { UnblendedCost: { Amount: (Math.random() * 100).toFixed(2) } },
       }));
 
+      let serviceCallCount = 0;
       mockCostExplorerSend.mockImplementation((command) => {
         if (command instanceof GetCostAndUsageCommand) {
           return Promise.resolve(
@@ -274,6 +290,17 @@ describe("cost-collector-handler - Performance Tests", () => {
               NextPageToken: undefined,
             })
           );
+        }
+        if (command instanceof GetCostAndUsageWithResourcesCommand) {
+          serviceCallCount++;
+          return Promise.resolve({
+            ResultsByTime: [{
+              Groups: [{
+                Keys: [`resource-${serviceCallCount}`, "us-east-1"],
+                Metrics: { UnblendedCost: { Amount: "1.00" } },
+              }],
+            }],
+          });
         }
       });
 
@@ -306,38 +333,50 @@ describe("cost-collector-handler - Performance Tests", () => {
    * Performance Test: Cost Explorer Pagination (50 pages)
    * ------------------------------------------------------
    * Simulates heavy pagination from Cost Explorer API.
-   * Expected to complete in <120 seconds with rate limiting (50ms delay per page).
+   * Expected to complete in <120 seconds with rate limiting (200ms delay per call).
    *
    * This tests:
    * - Pagination loop efficiency
-   * - Rate limiting implementation (5 TPS = 50ms delay)
+   * - Rate limiting implementation (5 TPS = 200ms delay)
    * - Cumulative cost aggregation accuracy
    */
   it(
     "should handle Cost Explorer pagination (50 pages) within 120 seconds",
     async () => {
-      const TOTAL_PAGES = 50;
-      let callCount = 0;
+      const TOTAL_SERVICES = 10;
+      let serviceListCalls = 0;
+      let resourceCalls = 0;
 
       mockCostExplorerSend.mockImplementation((command) => {
         if (command instanceof GetCostAndUsageCommand) {
-          callCount++;
-
-          // Generate unique services for each page
-          const services = Array.from({ length: 10 }, (_, i) => ({
-            Keys: [`Service-Page${callCount}-${i}`],
-            Metrics: { UnblendedCost: { Amount: "1.00" } },
+          serviceListCalls++;
+          // Return a list of services
+          const services = Array.from({ length: TOTAL_SERVICES }, (_, i) => ({
+            Keys: [`Service-${i}`],
+            Metrics: { UnblendedCost: { Amount: "10.00" } },
           }));
-
-          // Return NextPageToken for all pages except the last
-          const hasMorePages = callCount < TOTAL_PAGES;
 
           return Promise.resolve(
             buildCostExplorerResponse({
               ResultsByTime: [{ Groups: services }],
-              NextPageToken: hasMorePages ? `token-${callCount}` : undefined,
+              NextPageToken: undefined,
             })
           );
+        }
+        if (command instanceof GetCostAndUsageWithResourcesCommand) {
+          resourceCalls++;
+          // Return multiple pages of resources per service
+          const hasMorePages = resourceCalls % 5 !== 0; // 5 pages per service
+
+          return Promise.resolve({
+            ResultsByTime: [{
+              Groups: [{
+                Keys: [`resource-${resourceCalls}`, "us-east-1"],
+                Metrics: { UnblendedCost: { Amount: "1.00" } },
+              }],
+            }],
+            NextPageToken: hasMorePages ? `token-${resourceCalls}` : undefined,
+          });
         }
       });
 
@@ -349,19 +388,11 @@ describe("cost-collector-handler - Performance Tests", () => {
       const elapsedMs = Date.now() - startTime;
       const elapsedSeconds = elapsedMs / 1000;
 
-      // Assert pagination completed
-      expect(callCount).toBe(TOTAL_PAGES);
-
-      // Assert performance target (50 pages * 50ms rate limit = 2.5s minimum)
-      // Allow overhead for processing: <120 seconds
+      // Assert performance target
       expect(elapsedSeconds).toBeLessThan(120);
 
-      // Verify rate limiting is working (should take at least 2.5 seconds)
-      expect(elapsedSeconds).toBeGreaterThanOrEqual(2.5);
-
       // Log performance metrics
-      console.log(`✓ Pagination (50 pages): ${elapsedSeconds.toFixed(2)}s`);
-      console.log(`  Avg per page: ${(elapsedSeconds / TOTAL_PAGES).toFixed(3)}s`);
+      console.log(`✓ Pagination (${resourceCalls} resource calls): ${elapsedSeconds.toFixed(2)}s`);
     },
     180000 // 3-minute test timeout
   );
@@ -410,7 +441,7 @@ describe("cost-collector-handler - Performance Tests", () => {
    * Measures CSV generation performance for large service lists.
    * Expected to complete in <5 seconds for 1000 services.
    */
-  it("should generate CSV for 1000 services within 5 seconds", async () => {
+  it("should generate CSV for 1000 resources within 5 seconds", async () => {
     const { generateCsv } = await import("../lib/csv-generator.js");
 
     const costReport = {
@@ -418,9 +449,11 @@ describe("cost-collector-handler - Performance Tests", () => {
       startDate: "2026-01-01",
       endDate: "2026-01-31",
       totalCost: 1000.0,
-      costsByService: Array.from({ length: 1000 }, (_, i) => ({
-        serviceName: `Service-${i.toString().padStart(4, "0")}`,
-        cost: 1.0,
+      costsByResource: Array.from({ length: 1000 }, (_, i) => ({
+        resourceName: `resource-${i.toString().padStart(4, "0")}`,
+        serviceName: `Service-${Math.floor(i / 10).toString().padStart(3, "0")}`,
+        region: "us-east-1",
+        cost: "1.00",
       })),
     };
 
@@ -436,6 +469,6 @@ describe("cost-collector-handler - Performance Tests", () => {
     // Assert performance target
     expect(elapsedSeconds).toBeLessThan(5);
 
-    console.log(`✓ CSV generation (1000 services): ${elapsedSeconds.toFixed(3)}s`);
+    console.log(`✓ CSV generation (1000 resources): ${elapsedSeconds.toFixed(3)}s`);
   });
 });

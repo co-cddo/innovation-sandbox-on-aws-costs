@@ -1,7 +1,8 @@
 import type { CostReport } from "./types.js";
 
-function formatCurrency(amount: number): string {
-  return `$${amount.toFixed(2)}`;
+function formatCurrency(amount: number | string): string {
+  const num = typeof amount === "string" ? parseFloat(amount) : amount;
+  return `$${num.toFixed(2)}`;
 }
 
 export function generateMarkdownReport(report: CostReport): string {
@@ -17,14 +18,15 @@ export function generateMarkdownReport(report: CostReport): string {
   lines.push("");
 
   // Cost breakdown table
-  lines.push("Cost by service breakdown:");
-  lines.push("| Service | Cost |");
-  lines.push("|---------|------|");
+  lines.push("Cost by resource breakdown:");
+  lines.push("| Resource Name | Service | Region | Cost |");
+  lines.push("|---------------|---------|--------|------|");
 
-  for (const service of report.costsByService) {
-    // Only include services with non-zero costs
-    if (service.cost > 0) {
-      lines.push(`| ${service.serviceName} | ${formatCurrency(service.cost)} |`);
+  for (const resource of report.costsByResource) {
+    // Only include resources with non-zero costs
+    const cost = parseFloat(resource.cost);
+    if (cost > 0) {
+      lines.push(`| ${resource.resourceName} | ${resource.serviceName} | ${resource.region} | ${formatCurrency(resource.cost)} |`);
     }
   }
 

@@ -97,7 +97,7 @@ describe("CostExplorerRoleStack", () => {
           Statement: [
             {
               Sid: "CostExplorerRead",
-              Action: "ce:GetCostAndUsage",
+              Action: ["ce:GetCostAndUsage", "ce:GetCostAndUsageWithResources"],
               Effect: "Allow",
               Resource: "*",
             },
