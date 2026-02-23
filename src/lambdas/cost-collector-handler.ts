@@ -108,9 +108,13 @@ const SCHEDULER_GROUP = requireEnv("SCHEDULER_GROUP", {
   component: "Cost Collector Lambda",
   purpose: "to delete completed schedules",
 });
-const ISB_LEASES_LAMBDA_ARN = requireEnv("ISB_LEASES_LAMBDA_ARN", {
+const ISB_API_BASE_URL = requireEnv("ISB_API_BASE_URL", {
   component: "Cost Collector Lambda",
-  purpose: "to retrieve lease start date from ISB API",
+  purpose: "to call ISB API Gateway for lease details",
+});
+const ISB_JWT_SECRET_PATH = requireEnv("ISB_JWT_SECRET_PATH", {
+  component: "Cost Collector Lambda",
+  purpose: "to sign JWT tokens for ISB API authentication",
 });
 
 // Validate ARN formats at module load to fail fast
@@ -124,11 +128,12 @@ if (!ROLE_ARN_REGEX.test(COST_EXPLORER_ROLE_ARN)) {
   );
 }
 
-const LAMBDA_ARN_REGEX = /^arn:aws:lambda:[a-z0-9-]+:\d{12}:function:[\w-]+$/;
-if (!LAMBDA_ARN_REGEX.test(ISB_LEASES_LAMBDA_ARN)) {
+// Validate ISB API base URL format
+const URL_REGEX = /^https?:\/\/.+/;
+if (!URL_REGEX.test(ISB_API_BASE_URL)) {
   throw new Error(
-    `Invalid ISB_LEASES_LAMBDA_ARN format: ${ISB_LEASES_LAMBDA_ARN}. ` +
-    `Expected format: arn:aws:lambda:<region>:<account-id>:function:<function-name>`
+    `Invalid ISB_API_BASE_URL format: ${ISB_API_BASE_URL}. ` +
+    `Expected format: https://<api-gateway-url>`
   );
 }
 
@@ -182,7 +187,7 @@ export async function handler(event: unknown): Promise<void> {
     const leaseIdB64 = encodeLeaseId(userEmail, leaseId);
     isbApiSubsegment?.addAnnotation("leaseId", leaseId);
     isbApiSubsegment?.addAnnotation("accountId", accountId);
-    leaseDetails = await getLeaseDetails(leaseIdB64, userEmail, ISB_LEASES_LAMBDA_ARN);
+    leaseDetails = await getLeaseDetails(leaseIdB64, ISB_API_BASE_URL, ISB_JWT_SECRET_PATH);
     const elapsedAfterApi = Math.round((Date.now() - startTime) / 1000);
     logger.info("Retrieved lease details from ISB API", { elapsedSeconds: elapsedAfterApi });
     isbApiSubsegment?.close();

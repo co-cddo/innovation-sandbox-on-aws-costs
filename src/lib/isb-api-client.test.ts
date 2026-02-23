@@ -1,28 +1,54 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import {
+  SecretsManagerClient,
+  GetSecretValueCommand,
+} from "@aws-sdk/client-secrets-manager";
 
-// Mock Lambda client
-vi.mock("@aws-sdk/client-lambda", async () => {
-  const actual = await vi.importActual("@aws-sdk/client-lambda");
-  return {
-    ...actual,
-    LambdaClient: vi.fn(function() {}),
-  };
-});
+// Mock SecretsManager client via aws-clients
+vi.mock("./aws-clients.js", () => ({
+  getSecretsManagerClient: vi.fn(),
+}));
 
 describe("isb-api-client", () => {
-  let mockSend: ReturnType<typeof vi.fn>;
+  let mockSmSend: ReturnType<typeof vi.fn>;
+  let mockFetch: ReturnType<typeof vi.fn>;
 
-  beforeEach(() => {
+  const TEST_SECRET = "test-jwt-secret-key-for-hmac-signing";
+  const TEST_BASE_URL = "https://api.example.com";
+  const TEST_SECRET_PATH = "/isb/jwt-secret";
+
+  const validLeaseData = {
+    startDate: "2026-01-15T10:00:00.000Z",
+    expirationDate: "2026-02-15T10:00:00.000Z",
+    awsAccountId: "123456789012",
+    status: "Active",
+  };
+
+  const validJSendResponse = {
+    status: "success",
+    data: validLeaseData,
+  };
+
+  beforeEach(async () => {
     vi.resetModules();
-    mockSend = vi.fn(function() {});
-    (LambdaClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-      function() {
-        return {
-          send: mockSend,
-        };
-      }
-    );
+
+    // Mock SecretsManager client
+    mockSmSend = vi.fn().mockResolvedValue({
+      SecretString: TEST_SECRET,
+    });
+
+    const awsClients = await import("./aws-clients.js");
+    vi.mocked(awsClients.getSecretsManagerClient).mockReturnValue({
+      send: mockSmSend,
+    } as unknown as SecretsManagerClient);
+
+    // Mock global fetch
+    mockFetch = vi.fn();
+    vi.stubGlobal("fetch", mockFetch);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   describe("encodeLeaseId", () => {
@@ -41,27 +67,126 @@ describe("isb-api-client", () => {
     });
   });
 
-  describe("getLeaseDetails", () => {
-    const validLeaseResponse = {
-      statusCode: 200,
-      body: JSON.stringify({
-        startDate: "2026-01-15T10:00:00.000Z",
-        expirationDate: "2026-02-15T10:00:00.000Z",
-        awsAccountId: "123456789012",
-        status: "Active",
-      }),
-    };
+  describe("signJwt", () => {
+    it("should create JWT with correct three-part structure (header.payload.signature)", async () => {
+      const { signJwt } = await import("./isb-api-client.js");
+      const jwt = signJwt({ user: "test" }, TEST_SECRET);
+      const parts = jwt.split(".");
+      expect(parts).toHaveLength(3);
+    });
 
-    it("should parse response and return lease details", async () => {
-      mockSend.mockResolvedValue({
-        Payload: Buffer.from(JSON.stringify(validLeaseResponse)),
+    it("should create JWT header with correct algorithm and type", async () => {
+      const { signJwt } = await import("./isb-api-client.js");
+      const jwt = signJwt({ user: "test" }, TEST_SECRET);
+      const [headerB64] = jwt.split(".");
+
+      const header = JSON.parse(
+        Buffer.from(headerB64, "base64url").toString()
+      );
+      expect(header.alg).toBe("HS256");
+      expect(header.typ).toBe("JWT");
+    });
+
+    it("should include iat and exp claims in payload", async () => {
+      const { signJwt } = await import("./isb-api-client.js");
+      const now = Math.floor(Date.now() / 1000);
+      const jwt = signJwt({ user: "test" }, TEST_SECRET, 3600);
+      const [, payloadB64] = jwt.split(".");
+
+      const payload = JSON.parse(
+        Buffer.from(payloadB64, "base64url").toString()
+      );
+      expect(payload.iat).toBeGreaterThanOrEqual(now - 1);
+      expect(payload.iat).toBeLessThanOrEqual(now + 1);
+      expect(payload.exp).toBe(payload.iat + 3600);
+    });
+
+    it("should create HS256 HMAC signature (not directinvoke)", async () => {
+      const { signJwt } = await import("./isb-api-client.js");
+      const jwt = signJwt({ user: "test" }, TEST_SECRET);
+      const [, , signature] = jwt.split(".");
+
+      // Signature should be base64url encoded, not a literal string
+      expect(signature).not.toBe("directinvoke");
+      expect(signature).toMatch(/^[A-Za-z0-9_-]+$/);
+    });
+
+    it("should produce different signatures for different secrets", async () => {
+      const { signJwt } = await import("./isb-api-client.js");
+
+      // Use fixed time to ensure same iat/exp
+      vi.spyOn(Date, "now").mockReturnValue(1700000000000);
+
+      const jwt1 = signJwt({ user: "test" }, "secret1");
+      const jwt2 = signJwt({ user: "test" }, "secret2");
+
+      const sig1 = jwt1.split(".")[2];
+      const sig2 = jwt2.split(".")[2];
+      expect(sig1).not.toBe(sig2);
+    });
+
+    it("should produce same JWT for same inputs at same time", async () => {
+      const { signJwt } = await import("./isb-api-client.js");
+
+      vi.spyOn(Date, "now").mockReturnValue(1700000000000);
+
+      const jwt1 = signJwt({ user: "test" }, TEST_SECRET);
+      const jwt2 = signJwt({ user: "test" }, TEST_SECRET);
+      expect(jwt1).toBe(jwt2);
+    });
+
+    it("should use base64url encoding (no padding, URL-safe characters)", async () => {
+      const { signJwt } = await import("./isb-api-client.js");
+      const jwt = signJwt({ user: "test" }, TEST_SECRET);
+      const [headerB64, payloadB64, signature] = jwt.split(".");
+
+      for (const part of [headerB64, payloadB64, signature]) {
+        expect(part).not.toContain("=");
+        expect(part).not.toContain("+");
+        expect(part).not.toContain("/");
+        expect(part).toMatch(/^[A-Za-z0-9_-]+$/);
+      }
+    });
+  });
+
+  describe("getLeaseDetails", () => {
+    it("should fetch from correct URL with Authorization header", async () => {
+      mockFetch.mockResolvedValue({
+        status: 200,
+        json: () => Promise.resolve(validJSendResponse),
+        text: () => Promise.resolve(JSON.stringify(validJSendResponse)),
       });
 
-      const { getLeaseDetails } = await import("./isb-api-client.js");
+      const { getLeaseDetails, resetTokenCache } = await import(
+        "./isb-api-client.js"
+      );
+      resetTokenCache();
+
+      await getLeaseDetails("base64-lease-id", TEST_BASE_URL, TEST_SECRET_PATH);
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const [url, options] = mockFetch.mock.calls[0];
+      expect(url).toBe(`${TEST_BASE_URL}/leases/base64-lease-id`);
+      expect(options.method).toBe("GET");
+      expect(options.headers.Authorization).toMatch(/^Bearer .+/);
+      expect(options.headers["Content-Type"]).toBe("application/json");
+    });
+
+    it("should parse JSend response and return validated lease details", async () => {
+      mockFetch.mockResolvedValue({
+        status: 200,
+        json: () => Promise.resolve(validJSendResponse),
+      });
+
+      const { getLeaseDetails, resetTokenCache } = await import(
+        "./isb-api-client.js"
+      );
+      resetTokenCache();
+
       const result = await getLeaseDetails(
         "base64-lease-id",
-        "user@example.com",
-        "arn:aws:lambda:us-west-2:123456789012:function:isb-leases"
+        TEST_BASE_URL,
+        TEST_SECRET_PATH
       );
 
       expect(result.startDate).toBe("2026-01-15T10:00:00.000Z");
@@ -69,693 +194,679 @@ describe("isb-api-client", () => {
       expect(result.status).toBe("Active");
     });
 
-    it("should include Authorization header with JWT", async () => {
-      mockSend.mockResolvedValue({
-        Payload: Buffer.from(JSON.stringify(validLeaseResponse)),
+    it("should use AbortSignal.timeout for request timeout", async () => {
+      mockFetch.mockResolvedValue({
+        status: 200,
+        json: () => Promise.resolve(validJSendResponse),
       });
 
-      const { getLeaseDetails } = await import("./isb-api-client.js");
-      await getLeaseDetails(
-        "base64-lease-id",
-        "user@example.com",
-        "arn:aws:lambda:us-west-2:123456789012:function:isb-leases"
+      const { getLeaseDetails, resetTokenCache } = await import(
+        "./isb-api-client.js"
       );
+      resetTokenCache();
 
-      const call = mockSend.mock.calls[0][0];
-      const payload = JSON.parse(Buffer.from(call.input.Payload).toString());
-      expect(payload.headers.Authorization).toMatch(/^Bearer [A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.directinvoke$/);
+      await getLeaseDetails("base64-lease-id", TEST_BASE_URL, TEST_SECRET_PATH);
+
+      const [, options] = mockFetch.mock.calls[0];
+      expect(options.signal).toBeDefined();
     });
 
-    describe("JWT creation", () => {
-      it("should create JWT with correct three-part structure (header.payload.signature)", async () => {
-        mockSend.mockResolvedValue({
-          Payload: Buffer.from(JSON.stringify(validLeaseResponse)),
-        });
-
-        const { getLeaseDetails } = await import("./isb-api-client.js");
-        await getLeaseDetails(
-          "base64-lease-id",
-          "test@example.com",
-          "arn:aws:lambda:us-west-2:123456789012:function:isb-leases"
-        );
-
-        const call = mockSend.mock.calls[0][0];
-        const payload = JSON.parse(Buffer.from(call.input.Payload).toString());
-        const authHeader = payload.headers.Authorization;
-        const jwt = authHeader.replace("Bearer ", "");
-        const parts = jwt.split(".");
-
-        expect(parts).toHaveLength(3);
-        expect(parts[2]).toBe("directinvoke");
+    it("should fetch JWT secret from Secrets Manager", async () => {
+      mockFetch.mockResolvedValue({
+        status: 200,
+        json: () => Promise.resolve(validJSendResponse),
       });
 
-      it("should create JWT header with correct algorithm and type", async () => {
-        mockSend.mockResolvedValue({
-          Payload: Buffer.from(JSON.stringify(validLeaseResponse)),
-        });
+      const { getLeaseDetails, resetTokenCache } = await import(
+        "./isb-api-client.js"
+      );
+      resetTokenCache();
 
-        const { getLeaseDetails } = await import("./isb-api-client.js");
-        await getLeaseDetails(
-          "base64-lease-id",
-          "user@example.com",
-          "arn:aws:lambda:us-west-2:123456789012:function:isb-leases"
-        );
+      await getLeaseDetails("base64-lease-id", TEST_BASE_URL, TEST_SECRET_PATH);
 
-        const call = mockSend.mock.calls[0][0];
-        const payload = JSON.parse(Buffer.from(call.input.Payload).toString());
-        const jwt = payload.headers.Authorization.replace("Bearer ", "");
-        const [headerB64] = jwt.split(".");
-
-        // Decode base64url (add padding if needed)
-        const headerPadded = headerB64 + "=".repeat((4 - (headerB64.length % 4)) % 4);
-        const headerJson = Buffer.from(
-          headerPadded.replace(/-/g, "+").replace(/_/g, "/"),
-          "base64"
-        ).toString();
-        const header = JSON.parse(headerJson);
-
-        expect(header.alg).toBe("HS256");
-        expect(header.typ).toBe("JWT");
-      });
-
-      it("should create JWT payload with user email and Admin role", async () => {
-        mockSend.mockResolvedValue({
-          Payload: Buffer.from(JSON.stringify(validLeaseResponse)),
-        });
-
-        const { getLeaseDetails } = await import("./isb-api-client.js");
-        const testEmail = "admin@example.com";
-        await getLeaseDetails(
-          "base64-lease-id",
-          testEmail,
-          "arn:aws:lambda:us-west-2:123456789012:function:isb-leases"
-        );
-
-        const call = mockSend.mock.calls[0][0];
-        const payload = JSON.parse(Buffer.from(call.input.Payload).toString());
-        const jwt = payload.headers.Authorization.replace("Bearer ", "");
-        const [, payloadB64] = jwt.split(".");
-
-        // Decode base64url
-        const payloadPadded = payloadB64 + "=".repeat((4 - (payloadB64.length % 4)) % 4);
-        const payloadJson = Buffer.from(
-          payloadPadded.replace(/-/g, "+").replace(/_/g, "/"),
-          "base64"
-        ).toString();
-        const decodedPayload = JSON.parse(payloadJson);
-
-        expect(decodedPayload.user.email).toBe(testEmail);
-        expect(decodedPayload.user.roles).toEqual(["Admin"]);
-      });
-
-      it("should use base64url encoding (no padding, URL-safe characters)", async () => {
-        mockSend.mockResolvedValue({
-          Payload: Buffer.from(JSON.stringify(validLeaseResponse)),
-        });
-
-        const { getLeaseDetails } = await import("./isb-api-client.js");
-        await getLeaseDetails(
-          "base64-lease-id",
-          "user@example.com",
-          "arn:aws:lambda:us-west-2:123456789012:function:isb-leases"
-        );
-
-        const call = mockSend.mock.calls[0][0];
-        const payload = JSON.parse(Buffer.from(call.input.Payload).toString());
-        const jwt = payload.headers.Authorization.replace("Bearer ", "");
-        const [headerB64, payloadB64] = jwt.split(".");
-
-        // Base64url should not contain =, +, or /
-        expect(headerB64).not.toContain("=");
-        expect(headerB64).not.toContain("+");
-        expect(headerB64).not.toContain("/");
-
-        expect(payloadB64).not.toContain("=");
-        expect(payloadB64).not.toContain("+");
-        expect(payloadB64).not.toContain("/");
-
-        // Base64url should only contain alphanumeric, -, and _
-        expect(headerB64).toMatch(/^[A-Za-z0-9_-]+$/);
-        expect(payloadB64).toMatch(/^[A-Za-z0-9_-]+$/);
-      });
-
-      it("should create different JWTs for different email addresses", async () => {
-        mockSend.mockResolvedValue({
-          Payload: Buffer.from(JSON.stringify(validLeaseResponse)),
-        });
-
-        const { getLeaseDetails } = await import("./isb-api-client.js");
-
-        // First call with email1
-        await getLeaseDetails(
-          "base64-lease-id",
-          "user1@example.com",
-          "arn:aws:lambda:us-west-2:123456789012:function:isb-leases"
-        );
-        const call1 = mockSend.mock.calls[0][0];
-        const payload1 = JSON.parse(Buffer.from(call1.input.Payload).toString());
-        const jwt1 = payload1.headers.Authorization.replace("Bearer ", "");
-
-        // Second call with email2
-        await getLeaseDetails(
-          "base64-lease-id",
-          "user2@example.com",
-          "arn:aws:lambda:us-west-2:123456789012:function:isb-leases"
-        );
-        const call2 = mockSend.mock.calls[1][0];
-        const payload2 = JSON.parse(Buffer.from(call2.input.Payload).toString());
-        const jwt2 = payload2.headers.Authorization.replace("Bearer ", "");
-
-        // JWTs should be different (different payloads due to different emails)
-        expect(jwt1).not.toBe(jwt2);
-
-        // But headers and signatures should be the same
-        const [header1, payload1B64, sig1] = jwt1.split(".");
-        const [header2, payload2B64, sig2] = jwt2.split(".");
-        expect(header1).toBe(header2);
-        expect(sig1).toBe(sig2);
-        expect(sig1).toBe("directinvoke");
-        expect(payload1B64).not.toBe(payload2B64); // Different payloads
-      });
-
-      it("should create same JWT for same email address (deterministic)", async () => {
-        mockSend.mockResolvedValue({
-          Payload: Buffer.from(JSON.stringify(validLeaseResponse)),
-        });
-
-        const { getLeaseDetails } = await import("./isb-api-client.js");
-        const email = "consistent@example.com";
-
-        // First call
-        await getLeaseDetails(
-          "base64-lease-id",
-          email,
-          "arn:aws:lambda:us-west-2:123456789012:function:isb-leases"
-        );
-        const call1 = mockSend.mock.calls[0][0];
-        const payload1 = JSON.parse(Buffer.from(call1.input.Payload).toString());
-        const jwt1 = payload1.headers.Authorization.replace("Bearer ", "");
-
-        // Second call with same email
-        await getLeaseDetails(
-          "base64-lease-id",
-          email,
-          "arn:aws:lambda:us-west-2:123456789012:function:isb-leases"
-        );
-        const call2 = mockSend.mock.calls[1][0];
-        const payload2 = JSON.parse(Buffer.from(call2.input.Payload).toString());
-        const jwt2 = payload2.headers.Authorization.replace("Bearer ", "");
-
-        // JWTs should be identical (deterministic encoding)
-        expect(jwt1).toBe(jwt2);
-      });
-
-      it("should use literal 'directinvoke' signature (not cryptographic)", async () => {
-        mockSend.mockResolvedValue({
-          Payload: Buffer.from(JSON.stringify(validLeaseResponse)),
-        });
-
-        const { getLeaseDetails } = await import("./isb-api-client.js");
-        await getLeaseDetails(
-          "base64-lease-id",
-          "user@example.com",
-          "arn:aws:lambda:us-west-2:123456789012:function:isb-leases"
-        );
-
-        const call = mockSend.mock.calls[0][0];
-        const payload = JSON.parse(Buffer.from(call.input.Payload).toString());
-        const jwt = payload.headers.Authorization.replace("Bearer ", "");
-        const [, , signature] = jwt.split(".");
-
-        // Signature is the literal string "directinvoke", not a base64-encoded hash
-        expect(signature).toBe("directinvoke");
-        expect(signature.length).toBe(12); // Length of "directinvoke"
-
-        // Signature is NOT base64url encoded (contains lowercase letters not in base64)
-        expect(signature).toContain("i"); // 'i' is lowercase, base64 only has uppercase I
-        expect(signature).toContain("e");
-        expect(signature).toContain("t");
-      });
-
-      it("should handle special characters in email address", async () => {
-        mockSend.mockResolvedValue({
-          Payload: Buffer.from(JSON.stringify(validLeaseResponse)),
-        });
-
-        const { getLeaseDetails } = await import("./isb-api-client.js");
-        const emailWithSpecialChars = "user+tag@sub.example.com";
-        await getLeaseDetails(
-          "base64-lease-id",
-          emailWithSpecialChars,
-          "arn:aws:lambda:us-west-2:123456789012:function:isb-leases"
-        );
-
-        const call = mockSend.mock.calls[0][0];
-        const payload = JSON.parse(Buffer.from(call.input.Payload).toString());
-        const jwt = payload.headers.Authorization.replace("Bearer ", "");
-        const [, payloadB64] = jwt.split(".");
-
-        // Decode and verify email is preserved correctly
-        const payloadPadded = payloadB64 + "=".repeat((4 - (payloadB64.length % 4)) % 4);
-        const payloadJson = Buffer.from(
-          payloadPadded.replace(/-/g, "+").replace(/_/g, "/"),
-          "base64"
-        ).toString();
-        const decodedPayload = JSON.parse(payloadJson);
-
-        expect(decodedPayload.user.email).toBe(emailWithSpecialChars);
-      });
+      expect(mockSmSend).toHaveBeenCalledTimes(1);
+      const command = mockSmSend.mock.calls[0][0];
+      expect(command).toBeInstanceOf(GetSecretValueCommand);
+      expect(command.input.SecretId).toBe(TEST_SECRET_PATH);
     });
 
-    it("should construct complete API Gateway-style Lambda invocation payload", async () => {
-      mockSend.mockResolvedValue({
-        Payload: Buffer.from(JSON.stringify(validLeaseResponse)),
+    it("should cache the JWT secret across calls", async () => {
+      mockFetch.mockResolvedValue({
+        status: 200,
+        json: () => Promise.resolve(validJSendResponse),
       });
 
-      const { getLeaseDetails } = await import("./isb-api-client.js");
-      await getLeaseDetails(
-        "base64-lease-id",
-        "user@example.com",
-        "arn:aws:lambda:us-west-2:123456789012:function:isb-leases"
+      const { getLeaseDetails, resetTokenCache } = await import(
+        "./isb-api-client.js"
       );
+      resetTokenCache();
 
-      const call = mockSend.mock.calls[0][0];
-      expect(call).toBeInstanceOf(InvokeCommand);
-      expect(call.input.FunctionName).toBe(
-        "arn:aws:lambda:us-west-2:123456789012:function:isb-leases"
-      );
+      await getLeaseDetails("base64-lease-id", TEST_BASE_URL, TEST_SECRET_PATH);
+      await getLeaseDetails("base64-lease-id", TEST_BASE_URL, TEST_SECRET_PATH);
 
-      const payload = JSON.parse(Buffer.from(call.input.Payload).toString());
+      // Secret should only be fetched once
+      expect(mockSmSend).toHaveBeenCalledTimes(1);
+    });
 
-      // Verify complete API Gateway event structure
-      expect(payload).toMatchObject({
-        httpMethod: "GET",
-        path: "/leases/base64-lease-id",
-        pathParameters: {
-          leaseId: "base64-lease-id",
-        },
-        headers: {
-          "Content-Type": "application/json",
-        },
-        requestContext: {
-          httpMethod: "GET",
-          path: "/leases/base64-lease-id",
-        },
-        resource: "/leases/{leaseId}",
-        body: null,
-        isBase64Encoded: false,
+    it("should use JWT with HS256 signature (not directinvoke)", async () => {
+      mockFetch.mockResolvedValue({
+        status: 200,
+        json: () => Promise.resolve(validJSendResponse),
       });
+
+      const { getLeaseDetails, resetTokenCache } = await import(
+        "./isb-api-client.js"
+      );
+      resetTokenCache();
+
+      await getLeaseDetails("base64-lease-id", TEST_BASE_URL, TEST_SECRET_PATH);
+
+      const [, options] = mockFetch.mock.calls[0];
+      const jwt = options.headers.Authorization.replace("Bearer ", "");
+      const parts = jwt.split(".");
+      expect(parts).toHaveLength(3);
+      expect(parts[2]).not.toBe("directinvoke");
+      expect(parts[2]).toMatch(/^[A-Za-z0-9_-]+$/);
+    });
+
+    it("should include service identity in JWT payload", async () => {
+      mockFetch.mockResolvedValue({
+        status: 200,
+        json: () => Promise.resolve(validJSendResponse),
+      });
+
+      const { getLeaseDetails, resetTokenCache } = await import(
+        "./isb-api-client.js"
+      );
+      resetTokenCache();
+
+      await getLeaseDetails("base64-lease-id", TEST_BASE_URL, TEST_SECRET_PATH);
+
+      const [, options] = mockFetch.mock.calls[0];
+      const jwt = options.headers.Authorization.replace("Bearer ", "");
+      const [, payloadB64] = jwt.split(".");
+      const payload = JSON.parse(
+        Buffer.from(payloadB64, "base64url").toString()
+      );
+
+      expect(payload.user.email).toBe("ndx+costs@dsit.gov.uk");
+      expect(payload.user.roles).toEqual(["Admin"]);
     });
 
     it("should throw on 404 response", async () => {
-      mockSend.mockResolvedValue({
-        Payload: Buffer.from(
-          JSON.stringify({
-            statusCode: 404,
-            body: "Not Found",
-          })
-        ),
+      mockFetch.mockResolvedValue({
+        status: 404,
+        text: () => Promise.resolve("Not Found"),
       });
 
-      const { getLeaseDetails } = await import("./isb-api-client.js");
+      const { getLeaseDetails, resetTokenCache } = await import(
+        "./isb-api-client.js"
+      );
+      resetTokenCache();
 
       await expect(
-        getLeaseDetails(
-          "unknown-lease",
-          "user@example.com",
-          "arn:aws:lambda:us-west-2:123456789012:function:isb-leases"
-        )
+        getLeaseDetails("unknown-lease", TEST_BASE_URL, TEST_SECRET_PATH)
       ).rejects.toThrow("Lease not found");
     });
 
-    it("should throw on Lambda invocation error", async () => {
-      mockSend.mockResolvedValue({
-        FunctionError: "Unhandled",
-        Payload: Buffer.from("{}"),
-      });
-
-      const { getLeaseDetails } = await import("./isb-api-client.js");
-
-      await expect(
-        getLeaseDetails(
-          "lease-id",
-          "user@example.com",
-          "arn:aws:lambda:us-west-2:123456789012:function:isb-leases"
-        )
-      ).rejects.toThrow("ISB Leases Lambda invocation failed");
-    });
-
-    it("should throw on missing payload", async () => {
-      mockSend.mockResolvedValue({
-        Payload: undefined,
-      });
-
-      const { getLeaseDetails } = await import("./isb-api-client.js");
-
-      await expect(
-        getLeaseDetails(
-          "lease-id",
-          "user@example.com",
-          "arn:aws:lambda:us-west-2:123456789012:function:isb-leases"
-        )
-      ).rejects.toThrow("returned no payload");
-    });
-
     it("should throw on invalid response schema", async () => {
-      mockSend.mockResolvedValue({
-        Payload: Buffer.from(
-          JSON.stringify({
-            statusCode: 200,
-            body: JSON.stringify({
+      mockFetch.mockResolvedValue({
+        status: 200,
+        json: () =>
+          Promise.resolve({
+            status: "success",
+            data: {
               // Missing required fields
               status: "Active",
-            }),
-          })
-        ),
+            },
+          }),
       });
 
-      const { getLeaseDetails } = await import("./isb-api-client.js");
+      const { getLeaseDetails, resetTokenCache } = await import(
+        "./isb-api-client.js"
+      );
+      resetTokenCache();
 
       await expect(
-        getLeaseDetails(
-          "lease-id",
-          "user@example.com",
-          "arn:aws:lambda:us-west-2:123456789012:function:isb-leases"
-        )
+        getLeaseDetails("lease-id", TEST_BASE_URL, TEST_SECRET_PATH)
       ).rejects.toThrow("Invalid lease details response");
     });
 
-    it("should throw on non-200 status code", async () => {
-      mockSend.mockResolvedValue({
-        Payload: Buffer.from(
-          JSON.stringify({
-            statusCode: 500,
-            body: "Internal Server Error",
-          })
-        ),
-      });
-
-      const { getLeaseDetails } = await import("./isb-api-client.js");
-
-      await expect(
-        getLeaseDetails(
-          "lease-id",
-          "user@example.com",
-          "arn:aws:lambda:us-west-2:123456789012:function:isb-leases"
-        )
-      ).rejects.toThrow("ISB API error: 500");
-    });
-
     it("should throw on invalid date format in response", async () => {
-      mockSend.mockResolvedValue({
-        Payload: Buffer.from(
-          JSON.stringify({
-            statusCode: 200,
-            body: JSON.stringify({
-              startDate: "not-a-valid-date", // Invalid ISO 8601
+      mockFetch.mockResolvedValue({
+        status: 200,
+        json: () =>
+          Promise.resolve({
+            status: "success",
+            data: {
+              startDate: "not-a-valid-date",
               expirationDate: "2026-02-15T10:00:00.000Z",
               awsAccountId: "123456789012",
               status: "Active",
-            }),
-          })
-        ),
+            },
+          }),
       });
 
-      const { getLeaseDetails } = await import("./isb-api-client.js");
+      const { getLeaseDetails, resetTokenCache } = await import(
+        "./isb-api-client.js"
+      );
+      resetTokenCache();
 
       await expect(
-        getLeaseDetails(
-          "lease-id",
-          "user@example.com",
-          "arn:aws:lambda:us-west-2:123456789012:function:isb-leases"
-        )
+        getLeaseDetails("lease-id", TEST_BASE_URL, TEST_SECRET_PATH)
       ).rejects.toThrow("Invalid lease details response");
     });
 
     it("should throw on invalid awsAccountId format in response", async () => {
-      mockSend.mockResolvedValue({
-        Payload: Buffer.from(
-          JSON.stringify({
-            statusCode: 200,
-            body: JSON.stringify({
+      mockFetch.mockResolvedValue({
+        status: 200,
+        json: () =>
+          Promise.resolve({
+            status: "success",
+            data: {
               startDate: "2026-01-15T10:00:00.000Z",
               expirationDate: "2026-02-15T10:00:00.000Z",
-              awsAccountId: "12345", // Not 12 digits
+              awsAccountId: "12345",
               status: "Active",
-            }),
-          })
-        ),
+            },
+          }),
       });
 
-      const { getLeaseDetails } = await import("./isb-api-client.js");
+      const { getLeaseDetails, resetTokenCache } = await import(
+        "./isb-api-client.js"
+      );
+      resetTokenCache();
 
       await expect(
-        getLeaseDetails(
-          "lease-id",
-          "user@example.com",
-          "arn:aws:lambda:us-west-2:123456789012:function:isb-leases"
-        )
+        getLeaseDetails("lease-id", TEST_BASE_URL, TEST_SECRET_PATH)
       ).rejects.toThrow("Invalid lease details response");
     });
 
-    describe("retry logic", () => {
-      const validLeaseResponsePayload = {
-        statusCode: 200,
-        body: JSON.stringify({
-          startDate: "2026-01-15T10:00:00.000Z",
-          expirationDate: "2026-02-15T10:00:00.000Z",
-          awsAccountId: "123456789012",
-          status: "Active",
-        }),
-      };
+    it("should throw on empty JWT secret", async () => {
+      mockSmSend.mockResolvedValue({
+        SecretString: undefined,
+      });
 
+      const { getLeaseDetails, resetTokenCache } = await import(
+        "./isb-api-client.js"
+      );
+      resetTokenCache();
+
+      await expect(
+        getLeaseDetails("lease-id", TEST_BASE_URL, TEST_SECRET_PATH)
+      ).rejects.toThrow("JWT secret is empty");
+    });
+
+    describe("secret cache invalidation on 401/403", () => {
+      it("should invalidate secret cache on 401 response", async () => {
+        // First call succeeds
+        mockFetch.mockResolvedValueOnce({
+          status: 200,
+          json: () => Promise.resolve(validJSendResponse),
+        });
+
+        const { getLeaseDetails, resetTokenCache } = await import(
+          "./isb-api-client.js"
+        );
+        resetTokenCache();
+
+        await getLeaseDetails(
+          "base64-lease-id",
+          TEST_BASE_URL,
+          TEST_SECRET_PATH
+        );
+        expect(mockSmSend).toHaveBeenCalledTimes(1);
+
+        // Second call returns 401
+        mockFetch.mockResolvedValueOnce({
+          status: 401,
+          statusText: "Unauthorized",
+          text: () => Promise.resolve("Unauthorized"),
+        });
+
+        await expect(
+          getLeaseDetails("base64-lease-id", TEST_BASE_URL, TEST_SECRET_PATH)
+        ).rejects.toThrow("ISB API error: 401");
+
+        // Third call should re-fetch the secret (cache was invalidated)
+        mockFetch.mockResolvedValueOnce({
+          status: 200,
+          json: () => Promise.resolve(validJSendResponse),
+        });
+
+        await getLeaseDetails(
+          "base64-lease-id",
+          TEST_BASE_URL,
+          TEST_SECRET_PATH
+        );
+        expect(mockSmSend).toHaveBeenCalledTimes(2);
+      });
+
+      it("should invalidate secret cache on 403 response", async () => {
+        const { getLeaseDetails, resetTokenCache } = await import(
+          "./isb-api-client.js"
+        );
+        resetTokenCache();
+
+        mockFetch.mockResolvedValueOnce({
+          status: 403,
+          statusText: "Forbidden",
+          text: () => Promise.resolve("Forbidden"),
+        });
+
+        await expect(
+          getLeaseDetails("base64-lease-id", TEST_BASE_URL, TEST_SECRET_PATH)
+        ).rejects.toThrow("ISB API error: 403");
+
+        // Next call should re-fetch the secret
+        mockFetch.mockResolvedValueOnce({
+          status: 200,
+          json: () => Promise.resolve(validJSendResponse),
+        });
+
+        await getLeaseDetails(
+          "base64-lease-id",
+          TEST_BASE_URL,
+          TEST_SECRET_PATH
+        );
+        expect(mockSmSend).toHaveBeenCalledTimes(2);
+      });
+
+      it("should NOT retry on 401 response", async () => {
+        mockFetch.mockResolvedValue({
+          status: 401,
+          statusText: "Unauthorized",
+          text: () => Promise.resolve("Unauthorized"),
+        });
+
+        const { getLeaseDetails, resetTokenCache } = await import(
+          "./isb-api-client.js"
+        );
+        resetTokenCache();
+
+        await expect(
+          getLeaseDetails("base64-lease-id", TEST_BASE_URL, TEST_SECRET_PATH)
+        ).rejects.toThrow("ISB API error: 401");
+
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+      });
+
+      it("should NOT retry on 403 response", async () => {
+        mockFetch.mockResolvedValue({
+          status: 403,
+          statusText: "Forbidden",
+          text: () => Promise.resolve("Forbidden"),
+        });
+
+        const { getLeaseDetails, resetTokenCache } = await import(
+          "./isb-api-client.js"
+        );
+        resetTokenCache();
+
+        await expect(
+          getLeaseDetails("base64-lease-id", TEST_BASE_URL, TEST_SECRET_PATH)
+        ).rejects.toThrow("ISB API error: 403");
+
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    describe("retry logic", () => {
       it("should retry on 500 Internal Server Error (transient error)", async () => {
-        // First two attempts fail with 500, third succeeds
-        mockSend
+        mockFetch
           .mockResolvedValueOnce({
-            Payload: Buffer.from(
-              JSON.stringify({
-                statusCode: 500,
-                body: "Internal Server Error",
-              })
-            ),
+            status: 500,
+            text: () => Promise.resolve("Internal Server Error"),
           })
           .mockResolvedValueOnce({
-            Payload: Buffer.from(
-              JSON.stringify({
-                statusCode: 500,
-                body: "Internal Server Error",
-              })
-            ),
+            status: 500,
+            text: () => Promise.resolve("Internal Server Error"),
           })
           .mockResolvedValueOnce({
-            Payload: Buffer.from(JSON.stringify(validLeaseResponsePayload)),
+            status: 200,
+            json: () => Promise.resolve(validJSendResponse),
           });
 
-        const { getLeaseDetails } = await import("./isb-api-client.js");
+        const { getLeaseDetails, resetTokenCache } = await import(
+          "./isb-api-client.js"
+        );
+        resetTokenCache();
+
         const result = await getLeaseDetails(
           "lease-id",
-          "user@example.com",
-          "arn:aws:lambda:us-west-2:123456789012:function:isb-leases"
+          TEST_BASE_URL,
+          TEST_SECRET_PATH
         );
 
-        // Should succeed after retries
         expect(result.startDate).toBe("2026-01-15T10:00:00.000Z");
-        // Should have made 3 attempts (2 failures + 1 success)
-        expect(mockSend).toHaveBeenCalledTimes(3);
+        expect(mockFetch).toHaveBeenCalledTimes(3);
       });
 
       it("should retry on 503 Service Unavailable (transient error)", async () => {
-        // First attempt fails with 503, second succeeds
-        mockSend
+        mockFetch
           .mockResolvedValueOnce({
-            Payload: Buffer.from(
-              JSON.stringify({
-                statusCode: 503,
-                body: "Service Unavailable",
-              })
-            ),
+            status: 503,
+            text: () => Promise.resolve("Service Unavailable"),
           })
           .mockResolvedValueOnce({
-            Payload: Buffer.from(JSON.stringify(validLeaseResponsePayload)),
+            status: 200,
+            json: () => Promise.resolve(validJSendResponse),
           });
 
-        const { getLeaseDetails } = await import("./isb-api-client.js");
+        const { getLeaseDetails, resetTokenCache } = await import(
+          "./isb-api-client.js"
+        );
+        resetTokenCache();
+
         const result = await getLeaseDetails(
           "lease-id",
-          "user@example.com",
-          "arn:aws:lambda:us-west-2:123456789012:function:isb-leases"
+          TEST_BASE_URL,
+          TEST_SECRET_PATH
         );
 
         expect(result.startDate).toBe("2026-01-15T10:00:00.000Z");
-        expect(mockSend).toHaveBeenCalledTimes(2);
+        expect(mockFetch).toHaveBeenCalledTimes(2);
+      });
+
+      it("should retry on 502 Bad Gateway (transient error)", async () => {
+        mockFetch
+          .mockResolvedValueOnce({
+            status: 502,
+            text: () => Promise.resolve("Bad Gateway"),
+          })
+          .mockResolvedValueOnce({
+            status: 200,
+            json: () => Promise.resolve(validJSendResponse),
+          });
+
+        const { getLeaseDetails, resetTokenCache } = await import(
+          "./isb-api-client.js"
+        );
+        resetTokenCache();
+
+        const result = await getLeaseDetails(
+          "lease-id",
+          TEST_BASE_URL,
+          TEST_SECRET_PATH
+        );
+
+        expect(result.startDate).toBe("2026-01-15T10:00:00.000Z");
+        expect(mockFetch).toHaveBeenCalledTimes(2);
       });
 
       it("should retry on 429 Too Many Requests (rate limiting)", async () => {
-        // First attempt fails with 429, second succeeds
-        mockSend
+        mockFetch
           .mockResolvedValueOnce({
-            Payload: Buffer.from(
-              JSON.stringify({
-                statusCode: 429,
-                body: "Too Many Requests",
-              })
-            ),
+            status: 429,
+            text: () => Promise.resolve("Too Many Requests"),
           })
           .mockResolvedValueOnce({
-            Payload: Buffer.from(JSON.stringify(validLeaseResponsePayload)),
+            status: 200,
+            json: () => Promise.resolve(validJSendResponse),
           });
 
-        const { getLeaseDetails } = await import("./isb-api-client.js");
+        const { getLeaseDetails, resetTokenCache } = await import(
+          "./isb-api-client.js"
+        );
+        resetTokenCache();
+
         const result = await getLeaseDetails(
           "lease-id",
-          "user@example.com",
-          "arn:aws:lambda:us-west-2:123456789012:function:isb-leases"
+          TEST_BASE_URL,
+          TEST_SECRET_PATH
         );
 
         expect(result.startDate).toBe("2026-01-15T10:00:00.000Z");
-        expect(mockSend).toHaveBeenCalledTimes(2);
+        expect(mockFetch).toHaveBeenCalledTimes(2);
       });
 
       it("should NOT retry on 404 Not Found (client error)", async () => {
-        mockSend.mockResolvedValueOnce({
-          Payload: Buffer.from(
-            JSON.stringify({
-              statusCode: 404,
-              body: "Not Found",
-            })
-          ),
+        mockFetch.mockResolvedValueOnce({
+          status: 404,
+          text: () => Promise.resolve("Not Found"),
         });
 
-        const { getLeaseDetails } = await import("./isb-api-client.js");
+        const { getLeaseDetails, resetTokenCache } = await import(
+          "./isb-api-client.js"
+        );
+        resetTokenCache();
 
         await expect(
-          getLeaseDetails(
-            "unknown-lease",
-            "user@example.com",
-            "arn:aws:lambda:us-west-2:123456789012:function:isb-leases"
-          )
+          getLeaseDetails("unknown-lease", TEST_BASE_URL, TEST_SECRET_PATH)
         ).rejects.toThrow("Lease not found");
 
-        // Should only make 1 attempt (no retries for 4xx errors)
-        expect(mockSend).toHaveBeenCalledTimes(1);
+        expect(mockFetch).toHaveBeenCalledTimes(1);
       });
 
       it("should NOT retry on 400 Bad Request (client error)", async () => {
-        // Mock to return 400 on all calls (though it should only be called once)
-        mockSend.mockResolvedValue({
-          Payload: Buffer.from(
-            JSON.stringify({
-              statusCode: 400,
-              body: "Bad Request",
-            })
-          ),
+        mockFetch.mockResolvedValue({
+          status: 400,
+          text: () => Promise.resolve("Bad Request"),
         });
 
-        const { getLeaseDetails } = await import("./isb-api-client.js");
+        const { getLeaseDetails, resetTokenCache } = await import(
+          "./isb-api-client.js"
+        );
+        resetTokenCache();
 
         await expect(
-          getLeaseDetails(
-            "invalid-lease",
-            "user@example.com",
-            "arn:aws:lambda:us-west-2:123456789012:function:isb-leases"
-          )
+          getLeaseDetails("invalid-lease", TEST_BASE_URL, TEST_SECRET_PATH)
         ).rejects.toThrow("ISB API error: 400");
 
-        // BUG: Currently 400 errors ARE being retried (3 attempts) due to incomplete
-        // error checking in catch block. The isRetryableError() function correctly
-        // identifies 4xx as non-retryable, but the error is thrown and caught by
-        // the generic catch block which doesn't recognize it as non-retryable.
-        // This should be fixed to only make 1 attempt for 4xx errors.
-        expect(mockSend).toHaveBeenCalledTimes(3);
+        expect(mockFetch).toHaveBeenCalledTimes(1);
       });
 
       it("should exhaust max retry attempts (3 attempts) and throw", async () => {
-        // All 3 attempts fail with 500
-        mockSend.mockResolvedValue({
-          Payload: Buffer.from(
-            JSON.stringify({
-              statusCode: 500,
-              body: "Internal Server Error",
-            })
-          ),
+        mockFetch.mockResolvedValue({
+          status: 500,
+          text: () => Promise.resolve("Internal Server Error"),
         });
 
-        const { getLeaseDetails } = await import("./isb-api-client.js");
+        const { getLeaseDetails, resetTokenCache } = await import(
+          "./isb-api-client.js"
+        );
+        resetTokenCache();
 
         await expect(
-          getLeaseDetails(
-            "lease-id",
-            "user@example.com",
-            "arn:aws:lambda:us-west-2:123456789012:function:isb-leases"
-          )
+          getLeaseDetails("lease-id", TEST_BASE_URL, TEST_SECRET_PATH)
         ).rejects.toThrow("ISB API error: 500");
 
-        // Should make exactly 3 attempts
-        expect(mockSend).toHaveBeenCalledTimes(3);
+        expect(mockFetch).toHaveBeenCalledTimes(3);
       });
 
-      it("should retry on Lambda SDK error (ServiceUnavailableException)", async () => {
-        // First attempt throws SDK error, second succeeds
-        mockSend
-          .mockRejectedValueOnce(
-            Object.assign(new Error("ServiceUnavailableException"), {
-              name: "ServiceUnavailableException",
-            })
-          )
+      it("should retry on network error (fetch rejection)", async () => {
+        mockFetch
+          .mockRejectedValueOnce(new Error("Network error"))
           .mockResolvedValueOnce({
-            Payload: Buffer.from(JSON.stringify(validLeaseResponsePayload)),
+            status: 200,
+            json: () => Promise.resolve(validJSendResponse),
           });
 
-        const { getLeaseDetails } = await import("./isb-api-client.js");
+        const { getLeaseDetails, resetTokenCache } = await import(
+          "./isb-api-client.js"
+        );
+        resetTokenCache();
+
         const result = await getLeaseDetails(
           "lease-id",
-          "user@example.com",
-          "arn:aws:lambda:us-west-2:123456789012:function:isb-leases"
+          TEST_BASE_URL,
+          TEST_SECRET_PATH
         );
 
         expect(result.startDate).toBe("2026-01-15T10:00:00.000Z");
-        expect(mockSend).toHaveBeenCalledTimes(2);
+        expect(mockFetch).toHaveBeenCalledTimes(2);
       });
 
-      it("should retry on Lambda SDK error (ThrottlingException)", async () => {
-        // First attempt throws throttling error, second succeeds
-        mockSend
-          .mockRejectedValueOnce(
-            Object.assign(new Error("ThrottlingException"), {
-              name: "ThrottlingException",
-            })
-          )
+      it("should retry on timeout error", async () => {
+        const timeoutError = new DOMException(
+          "The operation was aborted",
+          "TimeoutError"
+        );
+        mockFetch
+          .mockRejectedValueOnce(timeoutError)
           .mockResolvedValueOnce({
-            Payload: Buffer.from(JSON.stringify(validLeaseResponsePayload)),
+            status: 200,
+            json: () => Promise.resolve(validJSendResponse),
           });
 
-        const { getLeaseDetails } = await import("./isb-api-client.js");
+        const { getLeaseDetails, resetTokenCache } = await import(
+          "./isb-api-client.js"
+        );
+        resetTokenCache();
+
         const result = await getLeaseDetails(
           "lease-id",
-          "user@example.com",
-          "arn:aws:lambda:us-west-2:123456789012:function:isb-leases"
+          TEST_BASE_URL,
+          TEST_SECRET_PATH
         );
 
         expect(result.startDate).toBe("2026-01-15T10:00:00.000Z");
-        expect(mockSend).toHaveBeenCalledTimes(2);
+        expect(mockFetch).toHaveBeenCalledTimes(2);
+      });
+    });
+
+    describe("JSend response parsing", () => {
+      it("should parse JSend response with data wrapper", async () => {
+        mockFetch.mockResolvedValue({
+          status: 200,
+          json: () =>
+            Promise.resolve({
+              status: "success",
+              data: validLeaseData,
+            }),
+        });
+
+        const { getLeaseDetails, resetTokenCache } = await import(
+          "./isb-api-client.js"
+        );
+        resetTokenCache();
+
+        const result = await getLeaseDetails(
+          "lease-id",
+          TEST_BASE_URL,
+          TEST_SECRET_PATH
+        );
+
+        expect(result.startDate).toBe("2026-01-15T10:00:00.000Z");
+        expect(result.awsAccountId).toBe("123456789012");
       });
 
-      it("should verify exponential backoff delay calculation", () => {
-        // This test verifies the backoff calculation logic indirectly
-        // by checking that multiple attempts are made over time
+      it("should handle response without JSend data wrapper (fallback)", async () => {
+        mockFetch.mockResolvedValue({
+          status: 200,
+          json: () => Promise.resolve(validLeaseData),
+        });
 
-        // Exponential backoff formula: Math.min(1000 * 2^attempt, 10000)
-        // Attempt 0 (first retry): 1000ms
-        // Attempt 1 (second retry): 2000ms
-        // Attempt 2 (third retry): 4000ms
+        const { getLeaseDetails, resetTokenCache } = await import(
+          "./isb-api-client.js"
+        );
+        resetTokenCache();
 
-        // The retry logic is tested implicitly in other tests that verify
-        // the correct number of attempts are made with delays between them.
-        // Testing exact timing with fake timers is complex due to module reloading.
+        const result = await getLeaseDetails(
+          "lease-id",
+          TEST_BASE_URL,
+          TEST_SECRET_PATH
+        );
 
-        expect(true).toBe(true); // Placeholder - backoff is tested via retry behavior
+        expect(result.startDate).toBe("2026-01-15T10:00:00.000Z");
       });
+
+      it("should allow extra fields from ISB API (passthrough schema)", async () => {
+        mockFetch.mockResolvedValue({
+          status: 200,
+          json: () =>
+            Promise.resolve({
+              status: "success",
+              data: {
+                ...validLeaseData,
+                extraField: "should-not-cause-error",
+                anotherField: 42,
+              },
+            }),
+        });
+
+        const { getLeaseDetails, resetTokenCache } = await import(
+          "./isb-api-client.js"
+        );
+        resetTokenCache();
+
+        const result = await getLeaseDetails(
+          "lease-id",
+          TEST_BASE_URL,
+          TEST_SECRET_PATH
+        );
+
+        expect(result.startDate).toBe("2026-01-15T10:00:00.000Z");
+      });
+    });
+
+    describe("token caching", () => {
+      it("should reuse cached token for subsequent calls", async () => {
+        mockFetch.mockResolvedValue({
+          status: 200,
+          json: () => Promise.resolve(validJSendResponse),
+        });
+
+        const { getLeaseDetails, resetTokenCache } = await import(
+          "./isb-api-client.js"
+        );
+        resetTokenCache();
+
+        await getLeaseDetails("lease-1", TEST_BASE_URL, TEST_SECRET_PATH);
+        await getLeaseDetails("lease-2", TEST_BASE_URL, TEST_SECRET_PATH);
+
+        // Both calls should use the same token
+        const token1 =
+          mockFetch.mock.calls[0][1].headers.Authorization;
+        const token2 =
+          mockFetch.mock.calls[1][1].headers.Authorization;
+        expect(token1).toBe(token2);
+      });
+
+      it("should reset token cache with resetTokenCache", async () => {
+        mockFetch.mockResolvedValue({
+          status: 200,
+          json: () => Promise.resolve(validJSendResponse),
+        });
+
+        const { getLeaseDetails, resetTokenCache } = await import(
+          "./isb-api-client.js"
+        );
+        resetTokenCache();
+
+        await getLeaseDetails("lease-1", TEST_BASE_URL, TEST_SECRET_PATH);
+        expect(mockSmSend).toHaveBeenCalledTimes(1);
+
+        resetTokenCache();
+
+        await getLeaseDetails("lease-2", TEST_BASE_URL, TEST_SECRET_PATH);
+        // Secret should be re-fetched after reset
+        expect(mockSmSend).toHaveBeenCalledTimes(2);
+      });
+    });
+
+    it("should URL-encode the lease ID in the request path", async () => {
+      mockFetch.mockResolvedValue({
+        status: 200,
+        json: () => Promise.resolve(validJSendResponse),
+      });
+
+      const { getLeaseDetails, resetTokenCache } = await import(
+        "./isb-api-client.js"
+      );
+      resetTokenCache();
+
+      const leaseIdWithSpecialChars = "abc+def/ghi=";
+      await getLeaseDetails(
+        leaseIdWithSpecialChars,
+        TEST_BASE_URL,
+        TEST_SECRET_PATH
+      );
+
+      const [url] = mockFetch.mock.calls[0];
+      expect(url).toBe(
+        `${TEST_BASE_URL}/leases/${encodeURIComponent(leaseIdWithSpecialChars)}`
+      );
     });
   });
 });

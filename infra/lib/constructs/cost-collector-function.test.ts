@@ -20,8 +20,8 @@ describe("CostCollectorFunction", () => {
       costsBucket: bucket,
       eventBusName: "test-event-bus",
       schedulerGroupName: "test-scheduler-group",
-      isbLeasesLambdaArn:
-        "arn:aws:lambda:us-west-2:123456789012:function:isb-leases",
+      isbApiBaseUrl: "https://abc123.execute-api.us-west-2.amazonaws.com/prod",
+      isbJwtSecretPath: "/isb/jwt-secret",
     });
 
     return { app, stack, bucket, collector, template: Template.fromStack(stack) };
@@ -57,8 +57,9 @@ describe("CostCollectorFunction", () => {
             PRESIGNED_URL_EXPIRY_DAYS: "7",
             EVENT_BUS_NAME: "test-event-bus",
             SCHEDULER_GROUP: "test-scheduler-group",
-            ISB_LEASES_LAMBDA_ARN:
-              "arn:aws:lambda:us-west-2:123456789012:function:isb-leases",
+            ISB_API_BASE_URL:
+              "https://abc123.execute-api.us-west-2.amazonaws.com/prod",
+            ISB_JWT_SECRET_PATH: "/isb/jwt-secret",
           },
         },
       });
@@ -97,18 +98,18 @@ describe("CostCollectorFunction", () => {
       });
     });
 
-    it("should have IAM permissions for ISB Leases Lambda", () => {
+    it("should have IAM permissions for ISB JWT Secret", () => {
       const { template } = createTestStack();
 
       template.hasResourceProperties("AWS::IAM::Policy", {
         PolicyDocument: {
           Statement: Match.arrayWith([
             {
-              Action: "lambda:InvokeFunction",
+              Action: "secretsmanager:GetSecretValue",
               Effect: "Allow",
               Resource:
-                "arn:aws:lambda:us-west-2:123456789012:function:isb-leases",
-              Sid: "InvokeIsbLeasesLambda",
+                "arn:aws:secretsmanager:us-west-2:123456789012:secret:/isb/jwt-secret*",
+              Sid: "GetIsbJwtSecret",
             },
           ]),
         },
@@ -335,8 +336,8 @@ describe("CostCollectorFunction", () => {
         costsBucket: bucket,
         eventBusName: "test-event-bus",
         schedulerGroupName: "test-scheduler-group",
-        isbLeasesLambdaArn:
-          "arn:aws:lambda:us-west-2:123456789012:function:isb-leases",
+        isbApiBaseUrl: "https://abc123.execute-api.us-west-2.amazonaws.com/prod",
+        isbJwtSecretPath: "/isb/jwt-secret",
         billingPaddingHours: "12",
         presignedUrlExpiryDays: "14",
         schedulerDelayHours: "48",

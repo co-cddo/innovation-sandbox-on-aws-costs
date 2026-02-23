@@ -1,6 +1,121 @@
-import { InvokeCommand, type InvokeCommandOutput } from "@aws-sdk/client-lambda";
+import {
+  SecretsManagerClient,
+  GetSecretValueCommand,
+} from "@aws-sdk/client-secrets-manager";
+import { createHmac } from "node:crypto";
 import { LeaseDetailsSchema, type LeaseDetails } from "./schemas.js";
-import { getLambdaClient } from "./aws-clients.js";
+import { getSecretsManagerClient } from "./aws-clients.js";
+
+/**
+ * Service identity used in JWT tokens for ISB API authentication.
+ * The ISB API Gateway authorizer validates this identity.
+ */
+const ISB_SERVICE_IDENTITY = {
+  email: "ndx+costs@dsit.gov.uk",
+  roles: ["Admin"],
+} as const;
+
+// =============================================================================
+// JWT Signing (zero new dependencies - uses Node.js built-in crypto)
+// =============================================================================
+
+/**
+ * Sign a JWT with HS256 algorithm using Node.js built-in crypto.
+ *
+ * Note: `iat` and `exp` claims are always set by this function and will
+ * override any values present in the payload object.
+ *
+ * @param payload - JWT payload object
+ * @param secret - HMAC-SHA256 signing secret
+ * @param expiresInSeconds - Token TTL (default 3600s / 1 hour)
+ * @returns Signed JWT string
+ */
+export function signJwt(
+  payload: object,
+  secret: string,
+  expiresInSeconds = 3600
+): string {
+  const header = { alg: "HS256", typ: "JWT" };
+  const now = Math.floor(Date.now() / 1000);
+  const fullPayload = { ...payload, iat: now, exp: now + expiresInSeconds };
+  const encodedHeader = Buffer.from(JSON.stringify(header)).toString(
+    "base64url"
+  );
+  const encodedPayload = Buffer.from(JSON.stringify(fullPayload)).toString(
+    "base64url"
+  );
+  const signature = createHmac("sha256", secret)
+    .update(`${encodedHeader}.${encodedPayload}`)
+    .digest("base64url");
+  return `${encodedHeader}.${encodedPayload}.${signature}`;
+}
+
+// =============================================================================
+// Token Manager - cached secret and token with rotation resilience
+// =============================================================================
+
+let cachedSecret: string | null = null;
+let cachedToken: string | null = null;
+let tokenExpiry = 0;
+
+/**
+ * Fetch JWT signing secret from Secrets Manager.
+ */
+async function fetchJwtSecret(secretPath: string): Promise<string> {
+  const client = getSecretsManagerClient();
+  const command = new GetSecretValueCommand({ SecretId: secretPath });
+  const response = await client.send(command);
+  if (!response.SecretString) {
+    throw new Error("JWT secret is empty");
+  }
+  return response.SecretString;
+}
+
+/**
+ * Get a valid signed JWT token, re-signing if expired or expiring within 60s.
+ *
+ * Fetches the signing secret from Secrets Manager on first call and caches it.
+ * The token payload uses {@link ISB_SERVICE_IDENTITY} as the service principal.
+ *
+ * @param jwtSecretPath - Secrets Manager path for the JWT secret
+ * @returns Signed JWT string
+ */
+async function getISBToken(jwtSecretPath: string): Promise<string> {
+  if (!cachedSecret) {
+    cachedSecret = await fetchJwtSecret(jwtSecretPath);
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  if (!cachedToken || now >= tokenExpiry - 60) {
+    cachedToken = signJwt({ user: ISB_SERVICE_IDENTITY }, cachedSecret, 3600);
+    tokenExpiry = now + 3600;
+  }
+
+  return cachedToken;
+}
+
+/**
+ * Invalidate cached secret and token, forcing re-fetch on next call.
+ * Called when the API returns 401/403, indicating possible secret rotation.
+ */
+function invalidateSecretCache(): void {
+  cachedSecret = null;
+  cachedToken = null;
+  tokenExpiry = 0;
+}
+
+/**
+ * Reset cached token and secret state (for testing).
+ */
+export function resetTokenCache(): void {
+  cachedSecret = null;
+  cachedToken = null;
+  tokenExpiry = 0;
+}
+
+// =============================================================================
+// Lease ID encoding
+// =============================================================================
 
 /**
  * Encodes a lease ID as a base64 composite key for the ISB API.
@@ -22,41 +137,26 @@ export function encodeLeaseId(userEmail: string, uuid: string): string {
   return Buffer.from(composite).toString("base64");
 }
 
+// =============================================================================
+// Retry helpers
+// =============================================================================
+
 /**
- * Creates a JWT for service-to-service authentication with ISB Lambda.
- * Uses the format expected by ISB Lambda middleware:
- * - Header: {"alg": "HS256", "typ": "JWT"}
- * - Payload: {"user": {"email": "...", "roles": ["Admin"]}}
- * - Signature: "directinvoke" (not verified for direct Lambda invocation)
+ * Error subclass for errors that should not be retried (e.g. 4xx, schema validation).
  */
-function createServiceJwt(userEmail: string): string {
-  const header = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" }))
-    .toString("base64")
-    .replace(/=/g, "")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_");
-
-  const payload = Buffer.from(
-    JSON.stringify({
-      user: {
-        email: userEmail,
-        roles: ["Admin"],
-      },
-    })
-  )
-    .toString("base64")
-    .replace(/=/g, "")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_");
-
-  return `${header}.${payload}.directinvoke`;
+class NonRetryableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "NonRetryableError";
+  }
 }
 
 /**
- * Determines if an error is retryable based on status code.
+ * Determines if an HTTP status code is retryable.
+ * Server errors (5xx) and rate limiting (429) are retryable.
  * Client errors (4xx) should not be retried as they indicate validation failures.
  */
-function isRetryableError(statusCode: number): boolean {
+function isRetryableStatus(statusCode: number): boolean {
   return statusCode >= 500 || statusCode === 429;
 }
 
@@ -71,36 +171,24 @@ function getBackoffDelay(attempt: number): number {
   return delay + Math.random() * 1000;
 }
 
-/**
- * Invokes the ISB Leases Lambda with the given API event.
- * This is the core invocation logic that will be wrapped with retries.
- */
-async function invokeLeasesLambda(
-  apiEvent: object,
-  isbLeasesLambdaArn: string
-): Promise<InvokeCommandOutput> {
-  const command = new InvokeCommand({
-    FunctionName: isbLeasesLambdaArn,
-    Payload: Buffer.from(JSON.stringify(apiEvent)),
-  });
-
-  const lambdaClient = getLambdaClient();
-  return await lambdaClient.send(command);
-}
+// =============================================================================
+// ISB API Client
+// =============================================================================
 
 /**
- * Retrieves lease details from the ISB Leases API Lambda function.
+ * Retrieves lease details from the ISB API Gateway.
  * Implements automatic retry logic with exponential backoff for transient errors (5xx, 429).
  * Client errors (4xx) are not retried as they indicate validation failures.
+ * On 401/403, invalidates the cached JWT secret to handle secret rotation.
  *
  * @param leaseIdB64 - Base64-encoded composite lease ID (from encodeLeaseId function)
- * @param userEmail - User email for JWT authentication
- * @param isbLeasesLambdaArn - ARN of the ISB Leases Lambda function
+ * @param isbApiBaseUrl - Base URL of the ISB API Gateway
+ * @param isbJwtSecretPath - Secrets Manager path for the JWT signing secret
  *
  * @returns Validated lease details including startDate, accountId, and user information
  *
  * @throws {Error} If lease is not found (404)
- * @throws {Error} If API returns client error (4xx) - not retried
+ * @throws {Error} If API returns non-retryable client error (4xx) - not retried
  * @throws {Error} If all retry attempts are exhausted after transient errors (5xx, 429)
  * @throws {Error} If response doesn't match LeaseDetails schema
  *
@@ -109,39 +197,19 @@ async function invokeLeasesLambda(
  * const leaseIdB64 = encodeLeaseId("user@example.com", "550e8400-e29b-41d4-a716-446655440000");
  * const details = await getLeaseDetails(
  *   leaseIdB64,
- *   "user@example.com",
- *   "arn:aws:lambda:us-east-1:123456789012:function:isb-leases-api"
+ *   "https://api.example.com",
+ *   "/isb/jwt-secret"
  * );
  * console.log(`Lease started: ${details.startDate}`);
- * console.log(`AWS Account: ${details.accountId}`);
+ * console.log(`AWS Account: ${details.awsAccountId}`);
  * ```
  */
 export async function getLeaseDetails(
   leaseIdB64: string,
-  userEmail: string,
-  isbLeasesLambdaArn: string
+  isbApiBaseUrl: string,
+  isbJwtSecretPath: string
 ): Promise<LeaseDetails> {
-  const jwt = createServiceJwt(userEmail);
-
-  // Construct API Gateway-style event payload
-  const apiEvent = {
-    httpMethod: "GET",
-    path: `/leases/${leaseIdB64}`,
-    pathParameters: {
-      leaseId: leaseIdB64,
-    },
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${jwt}`,
-    },
-    requestContext: {
-      httpMethod: "GET",
-      path: `/leases/${leaseIdB64}`,
-    },
-    resource: "/leases/{leaseId}",
-    body: null,
-    isBase64Encoded: false,
-  };
+  const url = `${isbApiBaseUrl}/leases/${encodeURIComponent(leaseIdB64)}`;
 
   const maxRetries = 3;
   let lastError: Error | undefined;
@@ -151,65 +219,56 @@ export async function getLeaseDetails(
       if (attempt > 0) {
         const delay = getBackoffDelay(attempt - 1);
         console.log(
-          `Retrying ISB Lambda invocation (attempt ${attempt + 1}/${maxRetries}) after ${Math.round(delay)}ms for lease ${leaseIdB64}`
+          `Retrying ISB API request (attempt ${attempt + 1}/${maxRetries}) after ${Math.round(delay)}ms for lease ${leaseIdB64}`
         );
         await new Promise((resolve) => setTimeout(resolve, delay));
       }
 
-      const response: InvokeCommandOutput = await invokeLeasesLambda(
-        apiEvent,
-        isbLeasesLambdaArn
-      );
+      const token = await getISBToken(isbJwtSecretPath);
 
-      if (response.FunctionError) {
-        throw new Error(
-          `ISB Leases Lambda invocation failed: ${response.FunctionError}`
+      const response = await fetch(url, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        signal: AbortSignal.timeout(5000),
+      });
+
+      // Invalidate cached secret on auth failures (handles secret rotation)
+      if (response.status === 401 || response.status === 403) {
+        invalidateSecretCache();
+        throw new NonRetryableError(
+          `ISB API error: ${response.status} - ${response.statusText}`
         );
       }
 
-      if (!response.Payload) {
-        throw new Error("ISB Leases Lambda returned no payload");
+      if (response.status === 404) {
+        throw new NonRetryableError(`Lease not found: ${leaseIdB64}`);
       }
 
-      // Parse Lambda response
-      const payloadStr = Buffer.from(response.Payload).toString("utf-8");
-      const lambdaResponse = JSON.parse(payloadStr);
-
-      // API Gateway Lambda responses have statusCode and body
-      if (lambdaResponse.statusCode === 404) {
-        throw new Error(`Lease not found: ${leaseIdB64}`);
-      }
-
-      if (lambdaResponse.statusCode !== 200) {
+      if (response.status !== 200) {
+        const bodyText = await response.text();
         const error = new Error(
-          `ISB API error: ${lambdaResponse.statusCode} - ${lambdaResponse.body}`
+          `ISB API error: ${response.status} - ${bodyText}`
         );
 
-        // Don't retry client errors (4xx) - these are validation failures
-        if (!isRetryableError(lambdaResponse.statusCode)) {
-          console.log(
-            `Non-retryable error (status ${lambdaResponse.statusCode}) for lease ${leaseIdB64}, skipping retries`
-          );
-          throw error;
+        if (!isRetryableStatus(response.status)) {
+          throw new NonRetryableError(error.message);
         }
 
         lastError = error;
         continue;
       }
 
-      // Parse the body (which is a JSON string in JSend format)
-      const bodyData =
-        typeof lambdaResponse.body === "string"
-          ? JSON.parse(lambdaResponse.body)
-          : lambdaResponse.body;
-
-      // ISB API uses JSend format: { status: "success", data: {...} }
+      // Parse the response body (JSend format: { status: "success", data: {...} })
+      const bodyData = await response.json();
       const leaseData = bodyData.data || bodyData;
 
       // Validate against schema
       const parseResult = LeaseDetailsSchema.safeParse(leaseData);
       if (!parseResult.success) {
-        throw new Error(
+        throw new NonRetryableError(
           `Invalid lease details response: ${parseResult.error.message}`
         );
       }
@@ -218,12 +277,8 @@ export async function getLeaseDetails(
     } catch (error) {
       lastError = error as Error;
 
-      // If this is a non-retryable error, throw immediately
-      if (
-        error instanceof Error &&
-        (error.message.includes("Lease not found") ||
-          error.message.includes("Invalid lease details response"))
-      ) {
+      // Non-retryable errors are thrown immediately (auth failures, not found, schema errors)
+      if (error instanceof NonRetryableError) {
         throw error;
       }
 

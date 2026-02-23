@@ -388,47 +388,6 @@ export function buildCostReport(
 }
 
 /**
- * Builds a Lambda InvokeCommand response from ISB API.
- *
- * Default: Successful 200 response with lease details
- *
- * @example
- * // Use defaults
- * const response = buildLambdaInvokeResponse();
- *
- * @example
- * // Build error response
- * const response = buildLambdaInvokeResponse({
- *   statusCode: 404,
- *   body: JSON.stringify({ error: "Lease not found" })
- * });
- *
- * @example
- * // Build response with custom lease
- * const response = buildLambdaInvokeResponse({
- *   body: JSON.stringify(buildLeaseDetails({ status: "Terminated" }))
- * });
- */
-export function buildLambdaInvokeResponse(
-  overrides: Partial<{
-    statusCode: number;
-    body: string;
-  }> = {}
-): {
-  Payload: Uint8Array;
-} {
-  const responseBody = {
-    statusCode: 200,
-    body: JSON.stringify(buildLeaseDetails()),
-    ...overrides,
-  };
-
-  return {
-    Payload: Buffer.from(JSON.stringify(responseBody)),
-  };
-}
-
-/**
  * Builds an S3 PutObject response.
  *
  * Default: Successful upload with ETag and checksum

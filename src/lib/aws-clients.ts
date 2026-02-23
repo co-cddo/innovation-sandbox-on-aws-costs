@@ -10,9 +10,9 @@ import {
   type EventBridgeClientConfig,
 } from "@aws-sdk/client-eventbridge";
 import {
-  LambdaClient,
-  type LambdaClientConfig,
-} from "@aws-sdk/client-lambda";
+  SecretsManagerClient,
+  type SecretsManagerClientConfig,
+} from "@aws-sdk/client-secrets-manager";
 import {
   CostExplorerClient,
   type CostExplorerClientConfig,
@@ -300,49 +300,45 @@ export function getEventBridgeClient(
 }
 
 /**
- * Gets or creates a cached Lambda client with connection pooling and retry configuration.
+ * Gets or creates a cached Secrets Manager client with connection pooling.
  * Automatically reuses existing clients based on region, credentials, and configuration.
  * Caches are invalidated before credential expiration (5-minute buffer).
- *
- * Default retry configuration:
- * - maxAttempts: 5
- * - retryMode: "adaptive" (adjusts to service throttling)
  *
  * @param config - Client cache configuration
  * @param config.credentials - Optional AWS credentials (e.g., from STS AssumeRole)
  * @param config.region - AWS region for the client (defaults to AWS SDK default region)
  * @param config.profile - Named AWS profile for CLI usage
  * @param config.roleArn - Role ARN for cache key generation
- * @param config.additionalConfig - Additional LambdaClientConfig to merge
+ * @param config.additionalConfig - Additional SecretsManagerClientConfig to merge
  *
- * @returns Cached or newly created LambdaClient with connection pooling and retry enabled
+ * @returns Cached or newly created SecretsManagerClient with connection pooling enabled
  *
  * @example
  * ```typescript
- * // Get default Lambda client with adaptive retries
- * const lambda = getLambdaClient();
+ * // Get default Secrets Manager client
+ * const sm = getSecretsManagerClient();
  *
- * // Get Lambda client for specific region
- * const lambdaUsEast = getLambdaClient({ region: "us-east-1" });
+ * // Get Secrets Manager client for specific region
+ * const smUsEast = getSecretsManagerClient({ region: "us-east-1" });
  * ```
  */
-export function getLambdaClient(config: ClientCacheConfig = {}): LambdaClient {
-  const key = generateCacheKey("Lambda", config);
+export function getSecretsManagerClient(
+  config: ClientCacheConfig = {}
+): SecretsManagerClient {
+  const key = generateCacheKey("SecretsManager", config);
   const expiresAt = calculateExpirationTime(config.credentials);
 
   return getCachedClient(
     key,
     () => {
-      const clientConfig: LambdaClientConfig = {
+      const clientConfig: SecretsManagerClientConfig = {
         region: config.region,
         credentials: config.credentials,
         requestHandler: createRequestHandler(),
-        maxAttempts: 5,
-        retryMode: "adaptive",
         ...config.additionalConfig,
       };
 
-      return new LambdaClient(clientConfig);
+      return new SecretsManagerClient(clientConfig);
     },
     expiresAt
   );

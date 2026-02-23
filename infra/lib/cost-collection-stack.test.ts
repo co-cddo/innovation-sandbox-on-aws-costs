@@ -10,8 +10,8 @@ describe("CostCollectionStack", () => {
     eventBusName: "test-event-bus",
     costExplorerRoleArn:
       "arn:aws:iam::999999999999:role/CostExplorerReadRole",
-    isbLeasesLambdaArn:
-      "arn:aws:lambda:us-west-2:123456789012:function:isb-leases",
+    isbApiBaseUrl: "https://abc123.execute-api.us-west-2.amazonaws.com/prod",
+    isbJwtSecretPath: "/isb/jwt-secret",
     alertEmail: "alerts@example.com",
   });
   const template = Template.fromStack(stack);
@@ -472,8 +472,8 @@ describe("CostCollectionStack", () => {
         eventBusName: "test-event-bus",
         costExplorerRoleArn:
           "arn:aws:iam::999999999999:role/CostExplorerReadRole",
-        isbLeasesLambdaArn:
-          "arn:aws:lambda:us-west-2:123456789012:function:isb-leases",
+        isbApiBaseUrl: "https://abc123.execute-api.us-west-2.amazonaws.com/prod",
+        isbJwtSecretPath: "/isb/jwt-secret",
         schedulerGroupName: "custom-scheduler-group",
       });
       const customTemplate = Template.fromStack(customStack);

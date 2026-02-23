@@ -12,7 +12,8 @@ const orgMgmtAccountId = app.node.tryGetContext("orgMgmtAccountId") ?? "95506368
 // Context values for main stack
 const eventBusName = app.node.tryGetContext("eventBusName") ?? "InnovationSandboxComputeISBEventBus6697FE33";
 const costExplorerRoleArn = app.node.tryGetContext("costExplorerRoleArn") ?? `arn:aws:iam::${orgMgmtAccountId}:role/isb-lease-costs-explorer-role`;
-const isbLeasesLambdaArn = app.node.tryGetContext("isbLeasesLambdaArn") ?? "";
+const isbApiBaseUrl = app.node.tryGetContext("isbApiBaseUrl") ?? "";
+const isbJwtSecretPath = app.node.tryGetContext("isbJwtSecretPath") ?? "";
 const alertEmail = app.node.tryGetContext("alertEmail") ?? "";
 
 // Cost Collector Lambda role ARN - required for least-privilege trust policy
@@ -28,18 +29,26 @@ if (!ROLE_ARN_REGEX.test(costExplorerRoleArn)) {
   );
 }
 
-// Validate ISB Leases Lambda ARN is provided and has correct format
-const LAMBDA_ARN_REGEX = /^arn:aws:lambda:[a-z0-9-]+:\d{12}:function:[\w-]+$/;
-if (!isbLeasesLambdaArn) {
+// Validate ISB API Base URL is provided and has correct format
+const URL_REGEX = /^https?:\/\/.+/;
+if (!isbApiBaseUrl) {
   throw new Error(
-    "isbLeasesLambdaArn context variable is required. " +
-    "Provide it via: --context isbLeasesLambdaArn=arn:aws:lambda:region:account:function:name"
+    "isbApiBaseUrl context variable is required. " +
+    "Provide it via: --context isbApiBaseUrl=https://api-id.execute-api.region.amazonaws.com/stage"
   );
 }
-if (!LAMBDA_ARN_REGEX.test(isbLeasesLambdaArn)) {
+if (!URL_REGEX.test(isbApiBaseUrl)) {
   throw new Error(
-    `Invalid isbLeasesLambdaArn format: ${isbLeasesLambdaArn}. ` +
-    `Expected format: arn:aws:lambda:<region>:<account>:function:<function-name>`
+    `Invalid isbApiBaseUrl format: ${isbApiBaseUrl}. ` +
+    `Expected format: https://<api-id>.execute-api.<region>.amazonaws.com/<stage>`
+  );
+}
+
+// Validate ISB JWT Secret Path is provided
+if (!isbJwtSecretPath) {
+  throw new Error(
+    "isbJwtSecretPath context variable is required. " +
+    "Provide it via: --context isbJwtSecretPath=/isb/jwt-secret"
   );
 }
 
@@ -85,7 +94,8 @@ const collectionStack = new CostCollectionStack(app, "IsbCostCollectionStack", {
   },
   eventBusName,
   costExplorerRoleArn,
-  isbLeasesLambdaArn,
+  isbApiBaseUrl,
+  isbJwtSecretPath,
   alertEmail,
 });
 

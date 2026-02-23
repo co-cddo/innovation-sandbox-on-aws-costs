@@ -111,10 +111,8 @@ describe("cost-collector-handler", () => {
     vi.stubEnv("PRESIGNED_URL_EXPIRY_DAYS", "7");
     vi.stubEnv("EVENT_BUS_NAME", "test-event-bus");
     vi.stubEnv("SCHEDULER_GROUP", "isb-lease-costs");
-    vi.stubEnv(
-      "ISB_LEASES_LAMBDA_ARN",
-      "arn:aws:lambda:us-west-2:123456789012:function:isb-leases"
-    );
+    vi.stubEnv("ISB_API_BASE_URL", "https://api.example.com");
+    vi.stubEnv("ISB_JWT_SECRET_PATH", "/isb/jwt-secret");
 
     // Import mocks
     const isbClient = await import("../lib/isb-api-client.js");
@@ -174,8 +172,8 @@ describe("cost-collector-handler", () => {
 
     expect(mockGetLeaseDetails).toHaveBeenCalledWith(
       "encoded-lease-id",
-      "user@example.com",
-      "arn:aws:lambda:us-west-2:123456789012:function:isb-leases"
+      "https://api.example.com",
+      "/isb/jwt-secret"
     );
     expect(mockAssumeCostExplorerRole).toHaveBeenCalledWith(
       "arn:aws:iam::999999999999:role/CostExplorerRole"
@@ -489,10 +487,8 @@ describe("cost-collector-handler", () => {
       vi.stubEnv("BILLING_PADDING_HOURS", "8");
       vi.stubEnv("PRESIGNED_URL_EXPIRY_DAYS", "7");
       vi.stubEnv("SCHEDULER_GROUP", "isb-lease-costs");
-      vi.stubEnv(
-        "ISB_LEASES_LAMBDA_ARN",
-        "arn:aws:lambda:us-west-2:123456789012:function:isb-leases"
-      );
+      vi.stubEnv("ISB_API_BASE_URL", "https://api.example.com");
+      vi.stubEnv("ISB_JWT_SECRET_PATH", "/isb/jwt-secret");
 
       await expect(async () => {
         await import("./cost-collector-handler.js");
@@ -510,10 +506,8 @@ describe("cost-collector-handler", () => {
       vi.stubEnv("BILLING_PADDING_HOURS", "8");
       vi.stubEnv("PRESIGNED_URL_EXPIRY_DAYS", "7");
       vi.stubEnv("SCHEDULER_GROUP", "isb-lease-costs");
-      vi.stubEnv(
-        "ISB_LEASES_LAMBDA_ARN",
-        "arn:aws:lambda:us-west-2:123456789012:function:isb-leases"
-      );
+      vi.stubEnv("ISB_API_BASE_URL", "https://api.example.com");
+      vi.stubEnv("ISB_JWT_SECRET_PATH", "/isb/jwt-secret");
 
       await expect(async () => {
         await import("./cost-collector-handler.js");
@@ -531,10 +525,8 @@ describe("cost-collector-handler", () => {
       vi.stubEnv("BILLING_PADDING_HOURS", "8");
       vi.stubEnv("PRESIGNED_URL_EXPIRY_DAYS", "7");
       vi.stubEnv("SCHEDULER_GROUP", "isb-lease-costs");
-      vi.stubEnv(
-        "ISB_LEASES_LAMBDA_ARN",
-        "arn:aws:lambda:us-west-2:123456789012:function:isb-leases"
-      );
+      vi.stubEnv("ISB_API_BASE_URL", "https://api.example.com");
+      vi.stubEnv("ISB_JWT_SECRET_PATH", "/isb/jwt-secret");
 
       const result = await import("./cost-collector-handler.js");
       expect(result).toBeDefined();
@@ -552,10 +544,8 @@ describe("cost-collector-handler", () => {
       vi.stubEnv("BILLING_PADDING_HOURS", "8");
       vi.stubEnv("PRESIGNED_URL_EXPIRY_DAYS", "7");
       vi.stubEnv("SCHEDULER_GROUP", "isb-lease-costs");
-      vi.stubEnv(
-        "ISB_LEASES_LAMBDA_ARN",
-        "arn:aws:lambda:us-west-2:123456789012:function:isb-leases"
-      );
+      vi.stubEnv("ISB_API_BASE_URL", "https://api.example.com");
+      vi.stubEnv("ISB_JWT_SECRET_PATH", "/isb/jwt-secret");
 
       const result = await import("./cost-collector-handler.js");
       expect(result).toBeDefined();
@@ -573,10 +563,8 @@ describe("cost-collector-handler", () => {
       vi.stubEnv("BILLING_PADDING_HOURS", "8");
       vi.stubEnv("PRESIGNED_URL_EXPIRY_DAYS", "7");
       vi.stubEnv("SCHEDULER_GROUP", "isb-lease-costs");
-      vi.stubEnv(
-        "ISB_LEASES_LAMBDA_ARN",
-        "arn:aws:lambda:us-west-2:123456789012:function:isb-leases"
-      );
+      vi.stubEnv("ISB_API_BASE_URL", "https://api.example.com");
+      vi.stubEnv("ISB_JWT_SECRET_PATH", "/isb/jwt-secret");
 
       await expect(async () => {
         await import("./cost-collector-handler.js");

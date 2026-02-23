@@ -9,7 +9,7 @@ import {
   getClientCacheSize,
   getS3Client,
   getEventBridgeClient,
-  getLambdaClient,
+  getSecretsManagerClient,
   getCostExplorerClient,
   getSTSClient,
   type ClientCacheConfig,
@@ -25,11 +25,11 @@ describe("aws-clients", () => {
       const config: ClientCacheConfig = { region: "us-east-1" };
 
       const s3Key = generateCacheKey("S3", config);
-      const lambdaKey = generateCacheKey("Lambda", config);
+      const smKey = generateCacheKey("SecretsManager", config);
 
-      expect(s3Key).not.toBe(lambdaKey);
+      expect(s3Key).not.toBe(smKey);
       expect(s3Key).toContain("S3");
-      expect(lambdaKey).toContain("Lambda");
+      expect(smKey).toContain("SecretsManager");
     });
 
     it("should generate unique keys for different regions", () => {
@@ -331,22 +331,21 @@ describe("aws-clients", () => {
       });
     });
 
-    describe("getLambdaClient", () => {
-      it("should create and cache Lambda client with retry config", () => {
-        const client1 = getLambdaClient();
-        const client2 = getLambdaClient();
+    describe("getSecretsManagerClient", () => {
+      it("should create and cache SecretsManager client", () => {
+        const client1 = getSecretsManagerClient();
+        const client2 = getSecretsManagerClient();
 
         expect(client1).toBe(client2);
         expect(getClientCacheSize()).toBe(1);
       });
 
-      it("should handle additional config", () => {
-        const client = getLambdaClient({
-          additionalConfig: { maxAttempts: 10 },
-        });
+      it("should create separate clients for different regions", () => {
+        const client1 = getSecretsManagerClient({ region: "us-east-1" });
+        const client2 = getSecretsManagerClient({ region: "eu-west-1" });
 
-        expect(client).toBeDefined();
-        expect(getClientCacheSize()).toBe(1);
+        expect(client1).not.toBe(client2);
+        expect(getClientCacheSize()).toBe(2);
       });
     });
 
@@ -399,7 +398,7 @@ describe("aws-clients", () => {
   describe("Integration scenarios", () => {
     it("should handle mixed client types in cache", () => {
       const s3 = getS3Client();
-      const lambda = getLambdaClient();
+      const sm = getSecretsManagerClient();
       const eventBridge = getEventBridgeClient();
       const costExplorer = getCostExplorerClient();
       const sts = getSTSClient();
@@ -408,7 +407,7 @@ describe("aws-clients", () => {
 
       // Verify caching works for each type
       expect(getS3Client()).toBe(s3);
-      expect(getLambdaClient()).toBe(lambda);
+      expect(getSecretsManagerClient()).toBe(sm);
       expect(getEventBridgeClient()).toBe(eventBridge);
       expect(getCostExplorerClient()).toBe(costExplorer);
       expect(getSTSClient()).toBe(sts);
