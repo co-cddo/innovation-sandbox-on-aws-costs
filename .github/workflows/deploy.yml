@@ -43,7 +43,7 @@ jobs:
 
       - name: CDK Deploy
         run: |
-          npx cdk deploy --require-approval never \
+          npx cdk deploy IsbCostCollectionStack --require-approval never \
             --context eventBusName=${{ vars.EVENT_BUS_NAME }} \
             --context costExplorerRoleArn=${{ secrets.COST_EXPLORER_ROLE_ARN }} \
             --context isbApiBaseUrl=${{ secrets.ISB_API_BASE_URL }} \
