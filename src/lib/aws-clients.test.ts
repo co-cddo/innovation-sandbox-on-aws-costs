@@ -9,7 +9,6 @@ import {
   getClientCacheSize,
   getS3Client,
   getEventBridgeClient,
-  getLambdaClient,
   getCostExplorerClient,
   getSTSClient,
   type ClientCacheConfig,
@@ -331,25 +330,6 @@ describe("aws-clients", () => {
       });
     });
 
-    describe("getLambdaClient", () => {
-      it("should create and cache Lambda client with retry config", () => {
-        const client1 = getLambdaClient();
-        const client2 = getLambdaClient();
-
-        expect(client1).toBe(client2);
-        expect(getClientCacheSize()).toBe(1);
-      });
-
-      it("should handle additional config", () => {
-        const client = getLambdaClient({
-          additionalConfig: { maxAttempts: 10 },
-        });
-
-        expect(client).toBeDefined();
-        expect(getClientCacheSize()).toBe(1);
-      });
-    });
-
     describe("getCostExplorerClient", () => {
       it("should create and cache Cost Explorer client", () => {
         const client1 = getCostExplorerClient();
@@ -399,21 +379,19 @@ describe("aws-clients", () => {
   describe("Integration scenarios", () => {
     it("should handle mixed client types in cache", () => {
       const s3 = getS3Client();
-      const lambda = getLambdaClient();
       const eventBridge = getEventBridgeClient();
       const costExplorer = getCostExplorerClient();
       const sts = getSTSClient();
 
-      expect(getClientCacheSize()).toBe(5);
+      expect(getClientCacheSize()).toBe(4);
 
       // Verify caching works for each type
       expect(getS3Client()).toBe(s3);
-      expect(getLambdaClient()).toBe(lambda);
       expect(getEventBridgeClient()).toBe(eventBridge);
       expect(getCostExplorerClient()).toBe(costExplorer);
       expect(getSTSClient()).toBe(sts);
 
-      expect(getClientCacheSize()).toBe(5); // No new entries
+      expect(getClientCacheSize()).toBe(4); // No new entries
     });
 
     it("should handle role-based credential scenarios", () => {

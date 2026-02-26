@@ -50,14 +50,12 @@ import {
 import { SchedulerClient, DeleteScheduleCommand } from "@aws-sdk/client-scheduler";
 import { CloudWatchClient, PutMetricDataCommand } from "@aws-sdk/client-cloudwatch";
 import { EventBridgeClient, PutEventsCommand } from "@aws-sdk/client-eventbridge";
-import { LambdaClient, InvokeCommand } from "@aws-sdk/client-lambda";
 import { STSClient, AssumeRoleCommand } from "@aws-sdk/client-sts";
 import {
   buildSchedulerPayload,
   buildLeaseDetails,
   buildCostExplorerResponse,
   buildCredentials,
-  buildLambdaInvokeResponse,
 } from "../../test/factories.js";
 
 // Mock AWS SDK clients
@@ -93,10 +91,12 @@ vi.mock("../lib/s3-uploader.js", () => ({
   }),
 }));
 
-vi.mock("@aws-sdk/client-lambda", async () => {
-  const actual = await vi.importActual("@aws-sdk/client-lambda");
-  return { ...actual, LambdaClient: vi.fn(function() {}) };
-});
+// Mock ISB API client to avoid real HTTP calls
+vi.mock("../lib/isb-api-client.js", () => ({
+  getLeaseDetails: vi.fn(),
+  getISBClient: vi.fn(),
+  resetISBClient: vi.fn(),
+}));
 
 vi.mock("@aws-sdk/client-sts", async () => {
   const actual = await vi.importActual("@aws-sdk/client-sts");
@@ -116,7 +116,6 @@ describe("cost-collector-handler - Performance Tests", () => {
   let mockSchedulerSend: ReturnType<typeof vi.fn>;
   let mockCloudWatchSend: ReturnType<typeof vi.fn>;
   let mockEventBridgeSend: ReturnType<typeof vi.fn>;
-  let mockLambdaSend: ReturnType<typeof vi.fn>;
   let mockSTSSend: ReturnType<typeof vi.fn>;
   let handler: (event: unknown) => Promise<void>;
 
@@ -127,7 +126,6 @@ describe("cost-collector-handler - Performance Tests", () => {
     mockSchedulerSend = vi.fn(function() {});
     mockCloudWatchSend = vi.fn(function() {});
     mockEventBridgeSend = vi.fn(function() {});
-    mockLambdaSend = vi.fn(function() {});
     mockSTSSend = vi.fn(function() {});
 
     (CostExplorerClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(
@@ -142,9 +140,6 @@ describe("cost-collector-handler - Performance Tests", () => {
     (EventBridgeClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(
       function() { return { send: mockEventBridgeSend }; }
     );
-    (LambdaClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(
-      function() { return { send: mockLambdaSend }; }
-    );
     (STSClient as unknown as ReturnType<typeof vi.fn>).mockImplementation(
       function() { return { send: mockSTSSend }; }
     );
@@ -154,7 +149,6 @@ describe("cost-collector-handler - Performance Tests", () => {
     vi.stubEnv("S3_BUCKET_NAME", "isb-lease-costs");
     vi.stubEnv("EVENT_BUS_NAME", "isb-events");
     vi.stubEnv("SCHEDULER_GROUP", "isb-lease-costs");
-    vi.stubEnv("ISB_LEASES_LAMBDA_ARN", "arn:aws:lambda:us-west-2:123456789012:function:isb-leases");
     vi.stubEnv("BILLING_PADDING_HOURS", "8");
     vi.stubEnv("PRESIGNED_URL_EXPIRY_DAYS", "7");
 
@@ -172,12 +166,9 @@ describe("cost-collector-handler - Performance Tests", () => {
       }
     });
 
-    // Mock Lambda Invoke (ISB API)
-    mockLambdaSend.mockImplementation((command) => {
-      if (command instanceof InvokeCommand) {
-        return Promise.resolve(buildLambdaInvokeResponse());
-      }
-    });
+    // Mock ISB API client (returns lease details directly)
+    const { getLeaseDetails } = await import("../lib/isb-api-client.js");
+    (getLeaseDetails as ReturnType<typeof vi.fn>).mockResolvedValue(buildLeaseDetails());
 
     // Mock EventBridge PutEvents
     mockEventBridgeSend.mockImplementation((command) => {

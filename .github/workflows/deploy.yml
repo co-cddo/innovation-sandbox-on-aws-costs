@@ -46,7 +46,9 @@ jobs:
           npx cdk deploy --require-approval never \
             --context eventBusName=${{ vars.EVENT_BUS_NAME }} \
             --context costExplorerRoleArn=${{ secrets.COST_EXPLORER_ROLE_ARN }} \
-            --context isbLeasesLambdaArn=${{ secrets.ISB_LEASES_LAMBDA_ARN }} \
+            --context isbApiBaseUrl=${{ secrets.ISB_API_BASE_URL }} \
+            --context isbJwtSecretPath=${{ secrets.ISB_JWT_SECRET_PATH }} \
+            --context costCollectorLambdaRoleArn=${{ secrets.COST_COLLECTOR_LAMBDA_ROLE_ARN }} \
             --context alertEmail=${{ vars.ALERT_EMAIL }}
         working-directory: infra
 

@@ -1779,7 +1779,7 @@ describe("Schema Evolution Strategy", () => {
       it("should reject UUID longer than 36 characters", () => {
         const event = {
           "detail-type": "LeaseTerminated",
-          source: "isb",
+          source: "InnovationSandbox-test",
           detail: {
             leaseId: {
               userEmail: "user@example.com",
@@ -1800,7 +1800,7 @@ describe("Schema Evolution Strategy", () => {
       it("should accept valid 36 character UUID", () => {
         const event = {
           "detail-type": "LeaseTerminated",
-          source: "isb",
+          source: "InnovationSandbox-test",
           detail: {
             leaseId: {
               userEmail: "user@example.com",
@@ -1824,7 +1824,7 @@ describe("Schema Evolution Strategy", () => {
 
         const event = {
           "detail-type": "LeaseTerminated",
-          source: "isb",
+          source: "InnovationSandbox-test",
           detail: {
             leaseId: {
               userEmail: longEmail,
@@ -1849,7 +1849,7 @@ describe("Schema Evolution Strategy", () => {
 
         const event = {
           "detail-type": "LeaseTerminated",
-          source: "isb",
+          source: "InnovationSandbox-test",
           detail: {
             leaseId: {
               userEmail: maxEmail,
@@ -1869,7 +1869,7 @@ describe("Schema Evolution Strategy", () => {
       it("should reject accountId longer than 12 characters", () => {
         const event = {
           "detail-type": "LeaseTerminated",
-          source: "isb",
+          source: "InnovationSandbox-test",
           detail: {
             leaseId: {
               userEmail: "user@example.com",
@@ -1890,7 +1890,7 @@ describe("Schema Evolution Strategy", () => {
       it("should accept valid 12 character accountId", () => {
         const event = {
           "detail-type": "LeaseTerminated",
-          source: "isb",
+          source: "InnovationSandbox-test",
           detail: {
             leaseId: {
               userEmail: "user@example.com",
@@ -2096,7 +2096,7 @@ describe("Schema Evolution Strategy", () => {
       it("should reject reason type longer than 128 characters", () => {
         const event = {
           "detail-type": "LeaseTerminated",
-          source: "isb",
+          source: "InnovationSandbox-test",
           detail: {
             leaseId: {
               userEmail: "user@example.com",
@@ -2117,7 +2117,7 @@ describe("Schema Evolution Strategy", () => {
       it("should accept reason type at 128 character limit", () => {
         const event = {
           "detail-type": "LeaseTerminated",
-          source: "isb",
+          source: "InnovationSandbox-test",
           detail: {
             leaseId: {
               userEmail: "user@example.com",
