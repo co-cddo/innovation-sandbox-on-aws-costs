@@ -253,7 +253,7 @@ exports[`CostCollectorFunction > snapshot > should match snapshot 1`] = `
         ],
         "Code": {
           "S3Bucket": "cdk-hnb659fds-assets-123456789012-us-west-2",
-          "S3Key": "b30e63cb54523ae82c3c6f816f1b35e7c745b623feeba53417a04b1fecff9fa6.zip",
+          "S3Key": "57419405db1ab8f5c37cc8f9567e9dc9cae31c5dcd0f252129c1a51560ca44e7.zip",
         },
         "DeadLetterConfig": {
           "TargetArn": {
@@ -268,7 +268,8 @@ exports[`CostCollectorFunction > snapshot > should match snapshot 1`] = `
             "BILLING_PADDING_HOURS": "8",
             "COST_EXPLORER_ROLE_ARN": "arn:aws:iam::999999999999:role/CostExplorerReadRole",
             "EVENT_BUS_NAME": "test-event-bus",
-            "ISB_LEASES_LAMBDA_ARN": "arn:aws:lambda:us-west-2:123456789012:function:isb-leases",
+            "ISB_API_BASE_URL": "https://test-api.execute-api.us-west-2.amazonaws.com/prod",
+            "ISB_JWT_SECRET_PATH": "/InnovationSandbox/ndx/Auth/JwtSecret",
             "PRESIGNED_URL_EXPIRY_DAYS": "7",
             "S3_BUCKET_NAME": {
               "Ref": "TestBucket560B80BC",
@@ -406,10 +407,10 @@ exports[`CostCollectorFunction > snapshot > should match snapshot 1`] = `
               "Sid": "AssumeRoleForCostExplorer",
             },
             {
-              "Action": "lambda:InvokeFunction",
+              "Action": "secretsmanager:GetSecretValue",
               "Effect": "Allow",
-              "Resource": "arn:aws:lambda:us-west-2:123456789012:function:isb-leases",
-              "Sid": "InvokeIsbLeasesLambda",
+              "Resource": "arn:aws:secretsmanager:us-west-2:123456789012:secret:/InnovationSandbox/ndx/Auth/JwtSecret*",
+              "Sid": "GetIsbJwtSecret",
             },
             {
               "Action": [

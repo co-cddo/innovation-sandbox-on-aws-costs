@@ -46,9 +46,14 @@ export interface CostCollectorFunctionProps {
   readonly schedulerGroupName: string;
 
   /**
-   * ARN of the ISB Leases Lambda function
+   * ISB API Gateway base URL
    */
-  readonly isbLeasesLambdaArn: string;
+  readonly isbApiBaseUrl: string;
+
+  /**
+   * Secrets Manager path for ISB JWT signing secret
+   */
+  readonly isbJwtSecretPath: string;
 
   /**
    * Billing data padding in hours
@@ -98,7 +103,8 @@ export interface CostCollectorFunctionProps {
  *   costsBucket: storage.bucket,
  *   eventBusName: 'isb-events',
  *   schedulerGroupName: 'isb-lease-costs',
- *   isbLeasesLambdaArn: 'arn:aws:lambda:us-west-2:123456789012:function:isb-leases',
+ *   isbApiBaseUrl: 'https://abc123.execute-api.us-west-2.amazonaws.com/prod',
+ *   isbJwtSecretPath: '/InnovationSandbox/ndx/Auth/JwtSecret',
  * });
  *
  * // Access functions
@@ -147,7 +153,8 @@ export class CostCollectorFunction extends Construct {
       costsBucket,
       eventBusName,
       schedulerGroupName,
-      isbLeasesLambdaArn,
+      isbApiBaseUrl,
+      isbJwtSecretPath,
       billingPaddingHours = "8",
       presignedUrlExpiryDays = "7",
       schedulerDelayHours = "24",
@@ -184,7 +191,8 @@ export class CostCollectorFunction extends Construct {
           PRESIGNED_URL_EXPIRY_DAYS: presignedUrlExpiryDays,
           EVENT_BUS_NAME: eventBusName,
           SCHEDULER_GROUP: schedulerGroupName,
-          ISB_LEASES_LAMBDA_ARN: isbLeasesLambdaArn,
+          ISB_API_BASE_URL: isbApiBaseUrl,
+          ISB_JWT_SECRET_PATH: isbJwtSecretPath,
         },
         bundling: {
           externalModules: ["@aws-sdk/*"],
@@ -211,9 +219,11 @@ export class CostCollectorFunction extends Construct {
 
     this.costCollectorFunction.addToRolePolicy(
       new iam.PolicyStatement({
-        sid: "InvokeIsbLeasesLambda",
-        actions: ["lambda:InvokeFunction"],
-        resources: [isbLeasesLambdaArn],
+        sid: "GetIsbJwtSecret",
+        actions: ["secretsmanager:GetSecretValue"],
+        resources: [
+          `arn:aws:secretsmanager:${region}:${accountId}:secret:${isbJwtSecretPath}*`,
+        ],
       })
     );
 

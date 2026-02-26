@@ -20,8 +20,8 @@ describe("CostCollectorFunction", () => {
       costsBucket: bucket,
       eventBusName: "test-event-bus",
       schedulerGroupName: "test-scheduler-group",
-      isbLeasesLambdaArn:
-        "arn:aws:lambda:us-west-2:123456789012:function:isb-leases",
+      isbApiBaseUrl: "https://test-api.execute-api.us-west-2.amazonaws.com/prod",
+      isbJwtSecretPath: "/InnovationSandbox/ndx/Auth/JwtSecret",
     });
 
     return { app, stack, bucket, collector, template: Template.fromStack(stack) };
@@ -57,8 +57,8 @@ describe("CostCollectorFunction", () => {
             PRESIGNED_URL_EXPIRY_DAYS: "7",
             EVENT_BUS_NAME: "test-event-bus",
             SCHEDULER_GROUP: "test-scheduler-group",
-            ISB_LEASES_LAMBDA_ARN:
-              "arn:aws:lambda:us-west-2:123456789012:function:isb-leases",
+            ISB_API_BASE_URL: "https://test-api.execute-api.us-west-2.amazonaws.com/prod",
+            ISB_JWT_SECRET_PATH: "/InnovationSandbox/ndx/Auth/JwtSecret",
           },
         },
       });
@@ -97,18 +97,18 @@ describe("CostCollectorFunction", () => {
       });
     });
 
-    it("should have IAM permissions for ISB Leases Lambda", () => {
+    it("should have IAM permissions to read ISB JWT secret", () => {
       const { template } = createTestStack();
 
       template.hasResourceProperties("AWS::IAM::Policy", {
         PolicyDocument: {
           Statement: Match.arrayWith([
             {
-              Action: "lambda:InvokeFunction",
+              Action: "secretsmanager:GetSecretValue",
               Effect: "Allow",
               Resource:
-                "arn:aws:lambda:us-west-2:123456789012:function:isb-leases",
-              Sid: "InvokeIsbLeasesLambda",
+                "arn:aws:secretsmanager:us-west-2:123456789012:secret:/InnovationSandbox/ndx/Auth/JwtSecret*",
+              Sid: "GetIsbJwtSecret",
             },
           ]),
         },
@@ -335,8 +335,8 @@ describe("CostCollectorFunction", () => {
         costsBucket: bucket,
         eventBusName: "test-event-bus",
         schedulerGroupName: "test-scheduler-group",
-        isbLeasesLambdaArn:
-          "arn:aws:lambda:us-west-2:123456789012:function:isb-leases",
+        isbApiBaseUrl: "https://test-api.execute-api.us-west-2.amazonaws.com/prod",
+        isbJwtSecretPath: "/InnovationSandbox/ndx/Auth/JwtSecret",
         billingPaddingHours: "12",
         presignedUrlExpiryDays: "14",
         schedulerDelayHours: "48",

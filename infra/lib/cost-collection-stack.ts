@@ -62,25 +62,18 @@ export interface CostCollectionStackProps extends cdk.StackProps {
   costExplorerRoleArn: string;
 
   /**
-   * ARN of the ISB Leases Lambda function for fetching lease metadata.
+   * ISB API Gateway base URL for fetching lease metadata.
    *
-   * **Required**: The Cost Collector needs lease start dates and account IDs to
-   * determine the billing window for Cost Explorer queries.
-   *
-   * **Invocation Pattern**: Direct Lambda invocation (not via API Gateway) using
-   * a service JWT that mimics Cognito authentication. The JWT contains a mock
-   * Admin user with email from ISB_SERVICE_USER_EMAIL environment variable.
-   *
-   * **Why Direct Invocation**: The ISB Leases API expects Cognito JWTs from API Gateway,
-   * but internal services need programmatic access without requiring a real Cognito user.
-   *
-   * **Source**: Output from ISB infrastructure stack
-   * **Format**: arn:aws:lambda:REGION:ACCOUNT:function:isb-leases-api
-   *
-   * @see src/lib/isb-api-client.ts for JWT creation and invocation logic
-   * @example "arn:aws:lambda:eu-west-2:123456789012:function:isb-leases-api"
+   * @example "https://abc123.execute-api.us-west-2.amazonaws.com/prod"
    */
-  isbLeasesLambdaArn: string;
+  isbApiBaseUrl: string;
+
+  /**
+   * Secrets Manager path for ISB JWT signing secret.
+   *
+   * @example "/InnovationSandbox/ndx/Auth/JwtSecret"
+   */
+  isbJwtSecretPath: string;
 
   /**
    * Email address for CloudWatch alarm notifications (optional).
@@ -126,7 +119,7 @@ export class CostCollectionStack extends cdk.Stack {
       terminationProtection: true, // Prevent accidental stack deletion
     });
 
-    const { eventBusName, costExplorerRoleArn, isbLeasesLambdaArn, alertEmail } =
+    const { eventBusName, costExplorerRoleArn, isbApiBaseUrl, isbJwtSecretPath, alertEmail } =
       props;
 
     // Resolve scheduler group name with default
@@ -162,7 +155,8 @@ export class CostCollectionStack extends cdk.Stack {
       costsBucket: storage.bucket,
       eventBusName,
       schedulerGroupName,
-      isbLeasesLambdaArn,
+      isbApiBaseUrl,
+      isbJwtSecretPath,
     });
 
     // EventBridge Rule to trigger Scheduler Lambda on LeaseTerminated

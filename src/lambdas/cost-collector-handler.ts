@@ -12,7 +12,7 @@ import {
   LeaseCostsGeneratedDetailSchema,
   type SchedulerPayload,
 } from "../lib/schemas.js";
-import { encodeLeaseId, getLeaseDetails } from "../lib/isb-api-client.js";
+import { getLeaseDetails } from "../lib/isb-api-client.js";
 import { assumeCostExplorerRole } from "../lib/assume-role.js";
 import { calculateBillingWindow } from "../lib/date-utils.js";
 import { getCostData } from "../lib/cost-explorer.js";
@@ -108,11 +108,6 @@ const SCHEDULER_GROUP = requireEnv("SCHEDULER_GROUP", {
   component: "Cost Collector Lambda",
   purpose: "to delete completed schedules",
 });
-const ISB_LEASES_LAMBDA_ARN = requireEnv("ISB_LEASES_LAMBDA_ARN", {
-  component: "Cost Collector Lambda",
-  purpose: "to retrieve lease start date from ISB API",
-});
-
 // Validate ARN formats at module load to fail fast
 // This catches deployment order issues where the role stack wasn't deployed first
 const ROLE_ARN_REGEX = /^arn:aws:iam::\d{12}:role\/[\w+=,.@-]+$/;
@@ -121,14 +116,6 @@ if (!ROLE_ARN_REGEX.test(COST_EXPLORER_ROLE_ARN)) {
     `Invalid COST_EXPLORER_ROLE_ARN format: ${COST_EXPLORER_ROLE_ARN}. ` +
     `Expected format: arn:aws:iam::<account-id>:role/<role-name>. ` +
     `Common cause: IsbCostExplorerRoleStack not deployed to orgManagement account first.`
-  );
-}
-
-const LAMBDA_ARN_REGEX = /^arn:aws:lambda:[a-z0-9-]+:\d{12}:function:[\w-]+$/;
-if (!LAMBDA_ARN_REGEX.test(ISB_LEASES_LAMBDA_ARN)) {
-  throw new Error(
-    `Invalid ISB_LEASES_LAMBDA_ARN format: ${ISB_LEASES_LAMBDA_ARN}. ` +
-    `Expected format: arn:aws:lambda:<region>:<account-id>:function:<function-name>`
   );
 }
 
@@ -179,10 +166,9 @@ export async function handler(event: unknown): Promise<void> {
   const isbApiSubsegment = segment?.addNewSubsegment("ISB API");
   let leaseDetails;
   try {
-    const leaseIdB64 = encodeLeaseId(userEmail, leaseId);
     isbApiSubsegment?.addAnnotation("leaseId", leaseId);
     isbApiSubsegment?.addAnnotation("accountId", accountId);
-    leaseDetails = await getLeaseDetails(leaseIdB64, userEmail, ISB_LEASES_LAMBDA_ARN);
+    leaseDetails = await getLeaseDetails(userEmail, leaseId, scheduleName);
     const elapsedAfterApi = Math.round((Date.now() - startTime) / 1000);
     logger.info("Retrieved lease details from ISB API", { elapsedSeconds: elapsedAfterApi });
     isbApiSubsegment?.close();

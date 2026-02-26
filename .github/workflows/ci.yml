@@ -33,7 +33,7 @@ jobs:
         run: npm run build
 
       - name: CDK Synth (validate stack compiles)
-        run: npx cdk synth --context eventBusName=test-bus --context costExplorerRoleArn=arn:aws:iam::123456789012:role/test --context isbLeasesLambdaArn=arn:aws:lambda:us-west-2:123456789012:function:test
+        run: npx cdk synth --context eventBusName=test-bus --context costExplorerRoleArn=arn:aws:iam::123456789012:role/test --context isbApiBaseUrl=https://test.execute-api.us-west-2.amazonaws.com/prod --context isbJwtSecretPath=/InnovationSandbox/ndx/Auth/JwtSecret --context costCollectorLambdaRoleArn=arn:aws:iam::123456789012:role/test-role
         working-directory: infra
 
       - name: Upload coverage
