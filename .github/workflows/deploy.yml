@@ -49,6 +49,7 @@ jobs:
             --context isbApiBaseUrl=${{ secrets.ISB_API_BASE_URL }} \
             --context isbJwtSecretPath=${{ secrets.ISB_JWT_SECRET_PATH }} \
             --context costCollectorLambdaRoleArn=${{ secrets.COST_COLLECTOR_LAMBDA_ROLE_ARN }} \
+            --context isbJwtSecretKmsKeyArn=${{ secrets.ISB_JWT_SECRET_KMS_KEY_ARN }} \
             --context alertEmail=${{ vars.ALERT_EMAIL }}
         working-directory: infra
 
