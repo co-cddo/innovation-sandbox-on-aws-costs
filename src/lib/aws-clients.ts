@@ -10,10 +10,6 @@ import {
   type EventBridgeClientConfig,
 } from "@aws-sdk/client-eventbridge";
 import {
-  LambdaClient,
-  type LambdaClientConfig,
-} from "@aws-sdk/client-lambda";
-import {
   CostExplorerClient,
   type CostExplorerClientConfig,
 } from "@aws-sdk/client-cost-explorer";
@@ -294,55 +290,6 @@ export function getEventBridgeClient(
       };
 
       return new EventBridgeClient(clientConfig);
-    },
-    expiresAt
-  );
-}
-
-/**
- * Gets or creates a cached Lambda client with connection pooling and retry configuration.
- * Automatically reuses existing clients based on region, credentials, and configuration.
- * Caches are invalidated before credential expiration (5-minute buffer).
- *
- * Default retry configuration:
- * - maxAttempts: 5
- * - retryMode: "adaptive" (adjusts to service throttling)
- *
- * @param config - Client cache configuration
- * @param config.credentials - Optional AWS credentials (e.g., from STS AssumeRole)
- * @param config.region - AWS region for the client (defaults to AWS SDK default region)
- * @param config.profile - Named AWS profile for CLI usage
- * @param config.roleArn - Role ARN for cache key generation
- * @param config.additionalConfig - Additional LambdaClientConfig to merge
- *
- * @returns Cached or newly created LambdaClient with connection pooling and retry enabled
- *
- * @example
- * ```typescript
- * // Get default Lambda client with adaptive retries
- * const lambda = getLambdaClient();
- *
- * // Get Lambda client for specific region
- * const lambdaUsEast = getLambdaClient({ region: "us-east-1" });
- * ```
- */
-export function getLambdaClient(config: ClientCacheConfig = {}): LambdaClient {
-  const key = generateCacheKey("Lambda", config);
-  const expiresAt = calculateExpirationTime(config.credentials);
-
-  return getCachedClient(
-    key,
-    () => {
-      const clientConfig: LambdaClientConfig = {
-        region: config.region,
-        credentials: config.credentials,
-        requestHandler: createRequestHandler(),
-        maxAttempts: 5,
-        retryMode: "adaptive",
-        ...config.additionalConfig,
-      };
-
-      return new LambdaClient(clientConfig);
     },
     expiresAt
   );

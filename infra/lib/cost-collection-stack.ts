@@ -76,6 +76,14 @@ export interface CostCollectionStackProps extends cdk.StackProps {
   isbJwtSecretPath: string;
 
   /**
+   * KMS key ARN used to encrypt the ISB JWT secret (optional).
+   * Required when the secret uses a customer-managed KMS key.
+   *
+   * @example "arn:aws:kms:us-west-2:123456789012:key/abcd1234-..."
+   */
+  isbJwtSecretKmsKeyArn?: string;
+
+  /**
    * Email address for CloudWatch alarm notifications (optional).
    *
    * **Optional**: If provided, creates an SNS topic and CloudWatch alarms for:
@@ -119,7 +127,7 @@ export class CostCollectionStack extends cdk.Stack {
       terminationProtection: true, // Prevent accidental stack deletion
     });
 
-    const { eventBusName, costExplorerRoleArn, isbApiBaseUrl, isbJwtSecretPath, alertEmail } =
+    const { eventBusName, costExplorerRoleArn, isbApiBaseUrl, isbJwtSecretPath, isbJwtSecretKmsKeyArn, alertEmail } =
       props;
 
     // Resolve scheduler group name with default
@@ -157,6 +165,7 @@ export class CostCollectionStack extends cdk.Stack {
       schedulerGroupName,
       isbApiBaseUrl,
       isbJwtSecretPath,
+      isbJwtSecretKmsKeyArn,
     });
 
     // EventBridge Rule to trigger Scheduler Lambda on LeaseTerminated
@@ -171,7 +180,6 @@ export class CostCollectionStack extends cdk.Stack {
       ruleName: "isb-lease-costs-trigger",
       description: "Triggers lease cost collection when a lease terminates",
       eventPattern: {
-        source: ["isb"],
         detailType: ["LeaseTerminated"],
       },
       targets: [

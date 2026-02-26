@@ -31,7 +31,7 @@ describe("scheduler-handler", () => {
     version: "0",
     id: "event-id",
     "detail-type": "LeaseTerminated",
-    source: "isb",
+    source: "InnovationSandbox-test",
     account: "123456789012",
     time: "2026-02-02T12:00:00Z",
     region: "us-west-2",

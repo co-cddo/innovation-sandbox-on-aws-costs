@@ -101,7 +101,7 @@ export function buildLeaseTerminatedEvent(
     version: "0",
     id: "12345678-1234-1234-1234-123456789012",
     "detail-type": "LeaseTerminated",
-    source: "isb",
+    source: "InnovationSandbox-test",
     account: "123456789012",
     time: "2026-02-03T12:00:00Z",
     region: "us-west-2",

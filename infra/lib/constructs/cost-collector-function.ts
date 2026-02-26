@@ -56,6 +56,12 @@ export interface CostCollectorFunctionProps {
   readonly isbJwtSecretPath: string;
 
   /**
+   * KMS key ARN used to encrypt the ISB JWT secret.
+   * Required when the secret uses a customer-managed KMS key (not aws/secretsmanager).
+   */
+  readonly isbJwtSecretKmsKeyArn?: string;
+
+  /**
    * Billing data padding in hours
    * @default "8"
    */
@@ -155,6 +161,7 @@ export class CostCollectorFunction extends Construct {
       schedulerGroupName,
       isbApiBaseUrl,
       isbJwtSecretPath,
+      isbJwtSecretKmsKeyArn,
       billingPaddingHours = "8",
       presignedUrlExpiryDays = "7",
       schedulerDelayHours = "24",
@@ -226,6 +233,16 @@ export class CostCollectorFunction extends Construct {
         ],
       })
     );
+
+    if (isbJwtSecretKmsKeyArn) {
+      this.costCollectorFunction.addToRolePolicy(
+        new iam.PolicyStatement({
+          sid: "DecryptIsbJwtSecret",
+          actions: ["kms:Decrypt"],
+          resources: [isbJwtSecretKmsKeyArn],
+        })
+      );
+    }
 
     costsBucket.grantReadWrite(this.costCollectorFunction);
 

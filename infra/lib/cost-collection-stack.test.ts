@@ -163,7 +163,6 @@ describe("CostCollectionStack", () => {
     it("should trigger on LeaseTerminated events", () => {
       template.hasResourceProperties("AWS::Events::Rule", {
         EventPattern: {
-          source: ["isb"],
           "detail-type": ["LeaseTerminated"],
         },
       });

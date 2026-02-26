@@ -15,6 +15,7 @@ const costExplorerRoleArn = app.node.tryGetContext("costExplorerRoleArn") ?? `ar
 const isbApiBaseUrl = app.node.tryGetContext("isbApiBaseUrl") ?? "";
 const isbJwtSecretPath = app.node.tryGetContext("isbJwtSecretPath") ?? "";
 const alertEmail = app.node.tryGetContext("alertEmail") ?? "";
+const isbJwtSecretKmsKeyArn = app.node.tryGetContext("isbJwtSecretKmsKeyArn") ?? "";
 
 // Cost Collector Lambda role ARN - required for least-privilege trust policy
 // This is obtained from the CostCollectionStack outputs after initial deployment
@@ -87,6 +88,7 @@ const collectionStack = new CostCollectionStack(app, "IsbCostCollectionStack", {
   costExplorerRoleArn,
   isbApiBaseUrl,
   isbJwtSecretPath,
+  isbJwtSecretKmsKeyArn: isbJwtSecretKmsKeyArn || undefined,
   alertEmail,
 });
 
