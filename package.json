@@ -37,7 +37,7 @@
     "@types/aws-lambda": "^8.10.147",
     "@types/node": "^25.3.0",
     "@vitest/coverage-v8": "^4.0.18",
-    "aws-cdk-lib": "^2.239.0",
+    "aws-cdk-lib": "^2.240.0",
     "constructs": "^10.4.0",
     "csv-parse": "^6.1.0",
     "esbuild": "^0.27.3",
